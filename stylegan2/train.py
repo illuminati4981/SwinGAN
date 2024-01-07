@@ -10,6 +10,7 @@
 "Training Generative Adversarial Networks with Limited Data"."""
 
 import os
+from tkinter.tix import IMAGE
 import click
 import re
 import json
@@ -21,6 +22,7 @@ from training import training_loop
 from metrics import metric_main
 from torch_utils import training_stats
 from torch_utils import custom_ops
+from ..Swin import SwinTransformer
 
 #----------------------------------------------------------------------------
 
@@ -64,6 +66,9 @@ def setup_training_loop_kwargs(
     allow_tf32 = None, # Allow PyTorch to use TF32 for matmul and convolutions: <bool>, default = False
     nobench    = None, # Disable cuDNN benchmarking: <bool>, default = False
     workers    = None, # Override number of DataLoader workers: <int>, default = 3
+
+    #swin model
+    swin
 ):
     args = dnnlib.EasyDict()
 
@@ -173,7 +178,7 @@ def setup_training_loop_kwargs(
         spec.gamma = 0.0002 * (res ** 2) / spec.mb # heuristic formula
         spec.ema = spec.mb * 10 / 32
 
-    args.G_kwargs = dnnlib.EasyDict(class_name='training.networks.Generator', z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict(), synthesis_kwargs=dnnlib.EasyDict())
+    args.G_kwargs = dnnlib.EasyDict(class_name='training.networks.Generator', swin=swin, z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict(), synthesis_kwargs=dnnlib.EasyDict())
     args.D_kwargs = dnnlib.EasyDict(class_name='training.networks.Discriminator', block_kwargs=dnnlib.EasyDict(), mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
     args.G_kwargs.synthesis_kwargs.channel_base = args.D_kwargs.channel_base = int(spec.fmaps * 32768)
     args.G_kwargs.synthesis_kwargs.channel_max = args.D_kwargs.channel_max = 512
@@ -482,8 +487,32 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     dnnlib.util.Logger(should_flush=True)
 
     # Setup training options.
+    IMAGE_SIZE = 224
+    PATCH_SIZE = 4
+    IN_CHANS = 3
+    EMBED_DIM = 96
+    DEPTHS = [2, 2, 18, 2]
+    NUM_HEADS = [3, 6, 12, 24]
+    WINDOW_SIZE = 7
+    MLP_RATIO = 4.
+    QKV_BIAS = True
+    QK_SCALE = None
+    APE = False
+    PATCH_NORM = True
     try:
-        run_desc, args = setup_training_loop_kwargs(**config_kwargs)
+        swin = SwinTransformer(img_size=IMAGE_SIZE,
+                               patch_size=PATCH_SIZE, 
+                               in_chans=IN_CHANS, 
+                               embed_dim=EMBED_DIM, 
+                               depths=DEPTHS, 
+                               num_heads=NUM_HEADS, 
+                               window_size=WINDOW_SIZE,
+                               mlp_ratio=MLP_RATIO, 
+                               qkv_bias=QKV_BIAS, 
+                               qk_scale=QK_SCALE, 
+                               ape=APE,
+                               patch_norm=PATCH_NORM,) 
+        run_desc, args = setup_training_loop_kwargs(**config_kwargs, swin)
     except UserError as err:
         ctx.fail(err)
 
