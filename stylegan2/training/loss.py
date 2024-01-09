@@ -29,7 +29,7 @@ class StyleGAN2Loss(Loss):
     def __init__(
         self,
         device,
-        G_swin,
+        swin,
         G_mapping,
         G_synthesis,
         D,
@@ -42,7 +42,7 @@ class StyleGAN2Loss(Loss):
     ):
         super().__init__()
         self.device = device
-        self.G_swin = G_swin
+        self.swin = swin
         self.G_mapping = G_mapping
         self.G_synthesis = G_synthesis
         self.D = D
@@ -56,7 +56,11 @@ class StyleGAN2Loss(Loss):
 
     def run_G(self, x, z, c, sync):
         with misc.ddp_sync(self.G_swin, sync):
-            x = self.G_swin(x)
+            x = self.swin(x)
+
+        ### TODO: Replace z with x
+        ### TODO: Ensure x having the same dimensions as z
+
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, z, c)
             if self.style_mixing_prob > 0:
@@ -89,6 +93,8 @@ class StyleGAN2Loss(Loss):
         do_Dmain = phase in ["Dmain", "Dboth"]
         do_Gpl = (phase in ["Greg", "Gboth"]) and (self.pl_weight != 0)
         do_Dr1 = (phase in ["Dreg", "Dboth"]) and (self.r1_gamma != 0)
+
+        ### TODO: Make a duplicated batch of real_img for degradation before passing it into run_G
 
         # Gmain: Maximize logits for generated images.
         if do_Gmain:
