@@ -1,5 +1,5 @@
 import torch.nn as nn
-from Swin import SwinTransformer
+from SwinGAN.stylegan2.Swin import SwinTransformer
 from stylegan2.training.networks import Generator
 
 

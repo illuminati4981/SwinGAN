@@ -616,7 +616,8 @@ class SynthesisNetwork(torch.nn.Module):
         num_fp16_res=0,  # Use FP16 for the N highest resolutions.
         **block_kwargs,  # Arguments for SynthesisBlock.
     ):
-        assert img_resolution >= 4 and img_resolution & (img_resolution - 1) == 0
+        print('img_resolution: ', img_resolution)
+        # assert img_resolution >= 4 and img_resolution & (img_resolution - 1) == 0
         super().__init__()
         self.w_dim = w_dim
         self.img_resolution = img_resolution
@@ -681,7 +682,7 @@ class Generator(torch.nn.Module):
         w_dim,  # Intermediate latent (W) dimensionality.
         img_resolution,  # Output resolution.
         img_channels,  # Number of output color channels.
-        swin,  # Number              # Swin model.
+        # swin,  # Number              # Swin model.
         mapping_kwargs={},  # Arguments for MappingNetwork.
         synthesis_kwargs={},  # Arguments for SynthesisNetwork.
     ):
@@ -689,7 +690,7 @@ class Generator(torch.nn.Module):
         self.z_dim = z_dim
         self.c_dim = c_dim
         self.w_dim = w_dim
-        self.swin = swin
+        # self.swin = swin
         self.img_resolution = img_resolution
         self.img_channels = img_channels
         self.synthesis = SynthesisNetwork(
@@ -706,7 +707,7 @@ class Generator(torch.nn.Module):
     def forward(
         self, x, z, c, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs
     ):
-        x = self.swin(x)
+        # x = self.swin(x)
         ws = self.mapping(
             x, z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff
         )

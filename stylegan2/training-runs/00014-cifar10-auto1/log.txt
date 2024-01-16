@@ -1,0 +1,83 @@
+Loading training set...
+C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\utils\data\sampler.py:64: UserWarning: `data_source` argument is not used and will be removed in 2.2.0.You may still have custom implementation that utilizes it.
+  warnings.warn("`data_source` argument is not used and will be removed in 2.2.0."
+
+Num images:  1
+Image shape: [4, 224, 224]
+Label shape: [0]
+
+Constructing networks...
+img_resolution:  224
+Setting up augmentation...
+Distributing across 1 GPUs...
+Setting up training phases...
+Exporting sample images...
+Initializing logs...
+Skipping tfevents export: No module named 'tensorboard'
+Training for 25000 kimg...
+
+Traceback (most recent call last):
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\train.py", line 566, in <module>
+    main() # pylint: disable=no-value-for-parameter
+    ^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\click\core.py", line 1157, in __call__
+    return self.main(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\click\core.py", line 1078, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\click\core.py", line 1434, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\click\core.py", line 783, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\click\decorators.py", line 33, in new_func
+    return f(get_current_context(), *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\train.py", line 559, in main
+    subprocess_fn(rank=0, args=args, temp_dir=temp_dir, swin=swin)
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\train.py", line 386, in subprocess_fn
+    training_loop.training_loop(rank=rank, **args, swin=swin)
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\training\training_loop.py", line 382, in training_loop
+    loss.accumulate_gradients(
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\training\loss.py", line 104, in accumulate_gradients
+    gen_img, _gen_ws = self.run_G(
+                       ^^^^^^^^^^^
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\training\loss.py", line 59, in run_G
+    x = self.swin(x)
+        ^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\Swin.py", line 780, in forward
+    x = self.forward_features(x)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\Swin.py", line 766, in forward_features
+    x = self.patch_embed(x)
+        ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\Desktop\UST\swin_gan\SwinGAN\stylegan2\Swin.py", line 608, in forward
+    x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
+        ^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\conv.py", line 460, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kytom\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\conv.py", line 456, in _conv_forward
+    return F.conv2d(input, weight, bias, self.stride,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Given groups=1, weight of size [96, 3, 1, 1], expected input[18, 4, 224, 224] to have 3 channels, but got 4 channels instead

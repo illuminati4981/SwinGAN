@@ -55,14 +55,14 @@ class StyleGAN2Loss(Loss):
         self.pl_mean = torch.zeros([], device=device)
 
     def run_G(self, x, z, c, sync):
-        with misc.ddp_sync(self.G_swin, sync):
+        with misc.ddp_sync(self.swin, sync):
             x = self.swin(x)
 
-        ### TODO: Replace z with x
-        ### TODO: Ensure x having the same dimensions as z
+        ### TODO: Replace z with x [Done]
+        ### TODO: Ensure x having the same dimensions as z [Done]
 
         with misc.ddp_sync(self.G_mapping, sync):
-            ws = self.G_mapping(x, z, c)
+            ws = self.G_mapping(x, c)
             if self.style_mixing_prob > 0:
                 with torch.autograd.profiler.record_function("style_mixing"):
                     cutoff = torch.empty(
@@ -95,22 +95,24 @@ class StyleGAN2Loss(Loss):
         do_Dr1 = (phase in ["Dreg", "Dboth"]) and (self.r1_gamma != 0)
 
         ### TODO: Make a duplicated batch of real_img for degradation before passing it into run_G
+        ### TODO: Call Degrade Function
+        deg_img = real_img 
 
         # Gmain: Maximize logits for generated images.
         if do_Gmain:
             with torch.autograd.profiler.record_function("Gmain_forward"):
                 gen_img, _gen_ws = self.run_G(
-                    real_img,
+                    deg_img,
                     gen_z,
                     gen_c,
-                    sync=(sync and not do_Gpl),  # real_img manually added
+                    sync=(sync and not do_Gpl),  # deg_img manually added
                 )  # May get synced by Gpl.
                 gen_logits = self.run_D(gen_img, gen_c, sync=False)
                 training_stats.report("Loss/scores/fake", gen_logits)
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Gmain = torch.nn.functional.softplus(
-                    -gen_logits
-                )  # -log(sigmoid(gen_logits))
+                    -gen_logits # -log(sigmoid(gen_logits))
+                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_logits) ### L1 Loss
                 training_stats.report("Loss/G/loss", loss_Gmain)
             with torch.autograd.profiler.record_function("Gmain_backward"):
                 loss_Gmain.mean().mul(gain).backward()
@@ -120,7 +122,7 @@ class StyleGAN2Loss(Loss):
             with torch.autograd.profiler.record_function("Gpl_forward"):
                 batch_size = gen_z.shape[0] // self.pl_batch_shrink
                 gen_img, gen_ws = self.run_G(
-                    real_img[:batch_size],  # manually added
+                    deg_img[:batch_size],  # manually added
                     gen_z[:batch_size],
                     gen_c[:batch_size],
                     sync=sync,
@@ -152,7 +154,7 @@ class StyleGAN2Loss(Loss):
         if do_Dmain:
             with torch.autograd.profiler.record_function("Dgen_forward"):
                 gen_img, _gen_ws = self.run_G(
-                    real_img, gen_z, gen_c, sync=False
+                    deg_img, gen_z, gen_c, sync=False
                 )  # real image manually added
                 gen_logits = self.run_D(
                     gen_img, gen_c, sync=False
@@ -160,8 +162,8 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/scores/fake", gen_logits)
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(
-                    gen_logits
-                )  # -log(1 - sigmoid(gen_logits))
+                    gen_logits  # -log(1 - sigmoid(gen_logits)) 
+                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_logits) ### L1 Loss
             with torch.autograd.profiler.record_function("Dgen_backward"):
                 loss_Dgen.mean().mul(gain).backward()
 
@@ -172,7 +174,7 @@ class StyleGAN2Loss(Loss):
                 "Dreal_Dr1" if do_Dmain and do_Dr1 else "Dreal" if do_Dmain else "Dr1"
             )
             with torch.autograd.profiler.record_function(name + "_forward"):
-                real_img_tmp = real_img.detach().requires_grad_(do_Dr1)
+                real_img_tmp = deg_img.detach().requires_grad_(do_Dr1)
                 real_logits = self.run_D(real_img_tmp, real_c, sync=sync)
                 training_stats.report("Loss/scores/real", real_logits)
                 training_stats.report("Loss/signs/real", real_logits.sign())

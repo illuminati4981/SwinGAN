@@ -93,6 +93,7 @@ def save_image_grid(img, fname, drange, grid_size):
 
 
 def training_loop(
+    swin,
     run_dir=".",  # Output directory.
     training_set_kwargs={},  # Options for training set.
     data_loader_kwargs={},  # Options for torch.utils.data.DataLoader.
@@ -192,15 +193,15 @@ def training_loop(
         print(f'Resuming from "{resume_pkl}"')
         with dnnlib.util.open_url(resume_pkl) as f:
             resume_data = legacy.load_network_pkl(f)
-        for name, module in [("G", G), ("D", D), ("G_ema", G_ema)]:
+        for name, module in [("swin", swin), ("G", G), ("D", D), ("G_ema", G_ema)]:
             misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
 
     # Print network summary tables.
     if rank == 0:
         z = torch.empty([batch_gpu, G.z_dim], device=device)
         c = torch.empty([batch_gpu, G.c_dim], device=device)
-        img = misc.print_module_summary(G, [z, c])
-        misc.print_module_summary(D, [img, c])
+        # img = misc.print_module_summary(G, [z, c])
+        # misc.print_module_summary(D, [img, c])
 
     # Setup augmentation.
     if rank == 0:
@@ -223,7 +224,7 @@ def training_loop(
         print(f"Distributing across {num_gpus} GPUs...")
     ddp_modules = dict()
     for name, module in [
-        ("G_swin", G.swin),
+        ("swin", swin),
         ("G_mapping", G.mapping),
         ("G_synthesis", G.synthesis),
         ("D", D),
@@ -251,6 +252,7 @@ def training_loop(
     )  # subclass of training.loss.Loss
     phases = []
     for name, module, opt_kwargs, reg_interval in [
+        # ("swin", swin, None, None), ### Swin Phases Initialization
         ("G", G, G_opt_kwargs, G_reg_interval),
         ("D", D, D_opt_kwargs, D_reg_interval),
     ]:
@@ -291,23 +293,23 @@ def training_loop(
     if rank == 0:
         print("Exporting sample images...")
         grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
-        save_image_grid(
-            images,
-            os.path.join(run_dir, "reals.png"),
-            drange=[0, 255],
-            grid_size=grid_size,
-        )
+        # save_image_grid(
+        #     images,
+        #     os.path.join(run_dir, "reals.png"),
+        #     drange=[0, 255],
+        #     grid_size=grid_size,
+        # )
         grid_z = torch.randn([labels.shape[0], G.z_dim], device=device).split(batch_gpu)
         grid_c = torch.from_numpy(labels).to(device).split(batch_gpu)
-        images = torch.cat(
-            [G_ema(z=z, c=c, noise_mode="const").cpu() for z, c in zip(grid_z, grid_c)]
-        ).numpy()
-        save_image_grid(
-            images,
-            os.path.join(run_dir, "fakes_init.png"),
-            drange=[-1, 1],
-            grid_size=grid_size,
-        )
+        # images = torch.cat(
+        #     [G_ema(z=z, c=c, noise_mode="const").cpu() for z, c in zip(grid_z, grid_c)]
+        # ).numpy()
+        # save_image_grid(
+        #     images,
+        #     os.path.join(run_dir, "fakes_init.png"),
+        #     drange=[-1, 1],
+        #     grid_size=grid_size,
+        # )
 
     # Initialize logs.
     if rank == 0:
