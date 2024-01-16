@@ -509,6 +509,7 @@ def training_loop(
         ):
             snapshot_data = dict(training_set_kwargs=dict(training_set_kwargs))
             for name, module in [
+                ("swin", swin), ### Swin Transformer Saving
                 ("G", G),
                 ("D", D),
                 ("G_ema", G_ema),
