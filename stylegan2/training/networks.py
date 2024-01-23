@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -208,6 +208,9 @@ class Conv2dLayer(torch.nn.Module):
         w = self.weight * self.weight_gain
         b = self.bias.to(x.dtype) if self.bias is not None else None
         flip_weight = self.up == 1  # slightly faster
+        if (x == None):
+          print('X is none!!!!!!!!!!!!!!!!!!!!!!!')
+
         x = conv2d_resample.conv2d_resample(
             x=x,
             w=w.to(x.dtype),
@@ -277,7 +280,7 @@ class MappingNetwork(torch.nn.Module):
             self.register_buffer("w_avg", torch.zeros([w_dim]))
 
     def forward(
-        self, x, z, c, truncation_psi=1, truncation_cutoff=None, skip_w_avg_update=False
+        self, x, c, truncation_psi=1, truncation_cutoff=None, skip_w_avg_update=False
     ):
         # Embed, normalize, and concat inputs.
         # x = None
@@ -303,6 +306,7 @@ class MappingNetwork(torch.nn.Module):
                 )
 
         # Broadcast.
+        print()
         if self.num_ws is not None:
             with torch.autograd.profiler.record_function("broadcast"):
                 x = x.unsqueeze(1).repeat([1, self.num_ws, 1])
@@ -616,16 +620,22 @@ class SynthesisNetwork(torch.nn.Module):
         num_fp16_res=0,  # Use FP16 for the N highest resolutions.
         **block_kwargs,  # Arguments for SynthesisBlock.
     ):
-        print('img_resolution: ', img_resolution)
         # assert img_resolution >= 4 and img_resolution & (img_resolution - 1) == 0
         super().__init__()
         self.w_dim = w_dim
         self.img_resolution = img_resolution
-        self.img_resolution_log2 = int(np.log2(img_resolution))
+
+        #########################################
+        # Hardcode to change the img_resolution #
+        #########################################
+        # self.img_resolution = 256 
+        
+        self.img_resolution_log2 = int(np.log2(self.img_resolution))
         self.img_channels = img_channels
         self.block_resolutions = [
             2**i for i in range(2, self.img_resolution_log2 + 1)
         ]
+
         channels_dict = {
             res: min(channel_base // res, channel_max) for res in self.block_resolutions
         }
@@ -649,7 +659,7 @@ class SynthesisNetwork(torch.nn.Module):
             )
             self.num_ws += block.num_conv
             if is_last:
-                self.num_ws += block.num_torgb
+              self.num_ws += block.num_torgb
             setattr(self, f"b{res}", block)
 
     def forward(self, ws, **block_kwargs):
@@ -660,6 +670,7 @@ class SynthesisNetwork(torch.nn.Module):
             w_idx = 0
             for res in self.block_resolutions:
                 block = getattr(self, f"b{res}")
+                print('w_idx: ', w_idx, ' block.num_conv ', block.num_conv, ' block.num_torgb ', block.num_torgb)
                 block_ws.append(ws.narrow(1, w_idx, block.num_conv + block.num_torgb))
                 w_idx += block.num_conv
 
@@ -690,7 +701,6 @@ class Generator(torch.nn.Module):
         self.z_dim = z_dim
         self.c_dim = c_dim
         self.w_dim = w_dim
-        # self.swin = swin
         self.img_resolution = img_resolution
         self.img_channels = img_channels
         self.synthesis = SynthesisNetwork(
@@ -700,6 +710,7 @@ class Generator(torch.nn.Module):
             **synthesis_kwargs,
         )
         self.num_ws = self.synthesis.num_ws
+
         self.mapping = MappingNetwork(
             z_dim=z_dim, c_dim=c_dim, w_dim=w_dim, num_ws=self.num_ws, **mapping_kwargs
         )
@@ -707,11 +718,13 @@ class Generator(torch.nn.Module):
     def forward(
         self, x, z, c, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs
     ):
-        # x = self.swin(x)
-        ws = self.mapping(
-            x, z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff
-        )
-        img = self.synthesis(ws, **synthesis_kwargs)
+        # ws = self.mapping(
+        #     x, z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff
+        # )
+        # img = self.synthesis(ws, **synthesis_kwargs)
+        ws = self.mapping(x, c)
+        img = self.synthesis(ws) 
+
         return img
 
 
@@ -990,7 +1003,14 @@ class Discriminator(torch.nn.Module):
         super().__init__()
         self.c_dim = c_dim
         self.img_resolution = img_resolution
-        self.img_resolution_log2 = int(np.log2(img_resolution))
+
+        #########################################
+        # Hardcode to change the img_resolution #
+        #########################################
+        # self.img_resolution = 256
+        
+        self.img_resolution_log2 = int(np.log2(self.img_resolution))
+
         self.img_channels = img_channels
         self.block_resolutions = [
             2**i for i in range(self.img_resolution_log2, 2, -1)
@@ -1047,6 +1067,7 @@ class Discriminator(torch.nn.Module):
     def forward(self, img, c, **block_kwargs):
         x = None
         for res in self.block_resolutions:
+            print(f"b{res}")
             block = getattr(self, f"b{res}")
             x, img = block(x, img, **block_kwargs)
 

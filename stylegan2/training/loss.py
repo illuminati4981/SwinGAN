@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -58,11 +58,12 @@ class StyleGAN2Loss(Loss):
         with misc.ddp_sync(self.swin, sync):
             x = self.swin(x)
 
-        ### TODO: Replace z with x [Done]
-        ### TODO: Ensure x having the same dimensions as z [Done]
+        ### SwinGAN: Replace z with x [Done]
+        ### SwinGAN: Ensure x having the same dimensions as z [Done]
 
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, c)
+
             if self.style_mixing_prob > 0:
                 with torch.autograd.profiler.record_function("style_mixing"):
                     cutoff = torch.empty(
@@ -78,6 +79,8 @@ class StyleGAN2Loss(Loss):
                     )[:, cutoff:]
         with misc.ddp_sync(self.G_synthesis, sync):
             img = self.G_synthesis(ws)
+
+        print('img shape: ', img.shape)
         return img, ws
 
     def run_D(self, img, c, sync):
@@ -112,42 +115,47 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Gmain = torch.nn.functional.softplus(
                     -gen_logits # -log(sigmoid(gen_logits))
-                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_logits) ### L1 Loss
+                )
+                # TODO: Dimensional Problem => real_img VS　gen_img
+                # ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
                 training_stats.report("Loss/G/loss", loss_Gmain)
             with torch.autograd.profiler.record_function("Gmain_backward"):
                 loss_Gmain.mean().mul(gain).backward()
 
         # Gpl: Apply path length regularization.
-        if do_Gpl:
-            with torch.autograd.profiler.record_function("Gpl_forward"):
-                batch_size = gen_z.shape[0] // self.pl_batch_shrink
-                gen_img, gen_ws = self.run_G(
-                    deg_img[:batch_size],  # manually added
-                    gen_z[:batch_size],
-                    gen_c[:batch_size],
-                    sync=sync,
-                )
-                pl_noise = torch.randn_like(gen_img) / np.sqrt(
-                    gen_img.shape[2] * gen_img.shape[3]
-                )
-                with torch.autograd.profiler.record_function(
-                    "pl_grads"
-                ), conv2d_gradfix.no_weight_gradients():
-                    pl_grads = torch.autograd.grad(
-                        outputs=[(gen_img * pl_noise).sum()],
-                        inputs=[gen_ws],
-                        create_graph=True,
-                        only_inputs=True,
-                    )[0]
-                pl_lengths = pl_grads.square().sum(2).mean(1).sqrt()
-                pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
-                self.pl_mean.copy_(pl_mean.detach())
-                pl_penalty = (pl_lengths - pl_mean).square()
-                training_stats.report("Loss/pl_penalty", pl_penalty)
-                loss_Gpl = pl_penalty * self.pl_weight
-                training_stats.report("Loss/G/reg", loss_Gpl)
-            with torch.autograd.profiler.record_function("Gpl_backward"):
-                (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
+        # if do_Gpl:
+        #     with torch.autograd.profiler.record_function("Gpl_forward"):
+        #         # batch_size = gen_z.shape[0] // self.pl_batch_shrink 
+        #         batch_size = deg_img.shape[0] // self.pl_batch_shrink 
+        #         # print('deg_img~~~~~~~~ ', deg_img.shape[0] )
+        #         print('deg_img[:batch_size] ', deg_img[:batch_size])
+        #         gen_img, gen_ws = self.run_G(
+        #             deg_img[:batch_size],  # manually added
+        #             gen_z[:batch_size],
+        #             gen_c[:batch_size],
+        #             sync=sync,
+        #         )
+        #         pl_noise = torch.randn_like(gen_img) / np.sqrt(
+        #             gen_img.shape[2] * gen_img.shape[3]
+        #         )
+        #         with torch.autograd.profiler.record_function(
+        #             "pl_grads"
+        #         ), conv2d_gradfix.no_weight_gradients():
+        #             pl_grads = torch.autograd.grad(
+        #                 outputs=[(gen_img * pl_noise).sum()],
+        #                 inputs=[gen_ws],
+        #                 create_graph=True,
+        #                 only_inputs=True,
+        #             )[0]
+        #         pl_lengths = pl_grads.square().sum(2).mean(1).sqrt()
+        #         pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
+        #         self.pl_mean.copy_(pl_mean.detach())
+        #         pl_penalty = (pl_lengths - pl_mean).square()
+        #         training_stats.report("Loss/pl_penalty", pl_penalty)
+        #         loss_Gpl = pl_penalty * self.pl_weight
+        #         training_stats.report("Loss/G/reg", loss_Gpl)
+        #     with torch.autograd.profiler.record_function("Gpl_backward"):
+        #         (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
 
         # Dmain: Minimize logits for generated images.
         loss_Dgen = 0
@@ -163,7 +171,8 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(
                     gen_logits  # -log(1 - sigmoid(gen_logits)) 
-                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_logits) ### L1 Loss
+                ) 
+                # ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
             with torch.autograd.profiler.record_function("Dgen_backward"):
                 loss_Dgen.mean().mul(gain).backward()
 
@@ -174,7 +183,14 @@ class StyleGAN2Loss(Loss):
                 "Dreal_Dr1" if do_Dmain and do_Dr1 else "Dreal" if do_Dmain else "Dr1"
             )
             with torch.autograd.profiler.record_function(name + "_forward"):
+                #####################################
+                #       Resize to 256 from 224      #
+                #####################################
+                # deg_img.resize_((1, 3, 256, 256))
+
                 real_img_tmp = deg_img.detach().requires_grad_(do_Dr1)
+
+                print("Size of real image: ", real_img_tmp.shape)
                 real_logits = self.run_D(real_img_tmp, real_c, sync=sync)
                 training_stats.report("Loss/scores/real", real_logits)
                 training_stats.report("Loss/signs/real", real_logits.sign())

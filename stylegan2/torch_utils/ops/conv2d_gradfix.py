@@ -12,6 +12,7 @@ arbitrarily high order gradients with zero performance penalty."""
 import warnings
 import contextlib
 import torch
+from pkg_resources import parse_version
 
 # pylint: disable=redefined-builtin
 # pylint: disable=arguments-differ
@@ -21,6 +22,7 @@ import torch
 
 enabled = False                     # Enable the custom op by setting this to true.
 weight_gradients_disabled = False   # Forcefully disable computation of gradients with respect to the weights.
+_use_pytorch_1_11_api = parse_version(torch.__version__) >= parse_version('1.11.0a') # Allow prerelease builds of 1.11
 
 @contextlib.contextmanager
 def no_weight_gradients():
@@ -48,9 +50,12 @@ def _should_use_custom_op(input):
     assert isinstance(input, torch.Tensor)
     if (not enabled) or (not torch.backends.cudnn.enabled):
         return False
+    if _use_pytorch_1_11_api:
+        # The work-around code doesn't work on PyTorch 1.11.0 onwards
+        return False
     if input.device.type != 'cuda':
         return False
-    if any(torch.__version__.startswith(x) for x in ['1.7.', '1.8.', '1.9']):
+    if any(torch.__version__.startswith(x) for x in ['1.7.', '1.8.', '1.9', '1.11', '2.1']):
         return True
     warnings.warn(f'conv2d_gradfix not supported on PyTorch {torch.__version__}. Falling back to torch.nn.functional.conv2d().')
     return False

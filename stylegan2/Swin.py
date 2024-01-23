@@ -688,7 +688,8 @@ class SwinTransformer(nn.Module):
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
-            img_size=img_size,
+            img_size=224,
+            # img_size=img_size,
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim,
@@ -747,6 +748,14 @@ class SwinTransformer(nn.Module):
 
         self.apply(self._init_weights)
 
+        ### SwinGAN: Added 4 Convolutional Layers
+        self.shallow_extractor = nn.Sequential(
+          nn.Conv2d(in_chans, in_chans, 9),
+          nn.Conv2d(in_chans, in_chans, 9),
+          nn.Conv2d(in_chans, in_chans, 9),
+          nn.Conv2d(in_chans, in_chans, 9)
+        )
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=0.02)
@@ -779,6 +788,10 @@ class SwinTransformer(nn.Module):
         return x
 
     def forward(self, x):
+        # SwinGAN: Shallow Feature Extractor
+        print('x shape: ', x.shape)
+        x = self.shallow_extractor(x)
+        print('x shape: ', x.shape)
         x = self.forward_features(x)
         x = self.head(x)
         return x
