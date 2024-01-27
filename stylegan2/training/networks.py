@@ -208,8 +208,6 @@ class Conv2dLayer(torch.nn.Module):
         w = self.weight * self.weight_gain
         b = self.bias.to(x.dtype) if self.bias is not None else None
         flip_weight = self.up == 1  # slightly faster
-        if (x == None):
-          print('X is none!!!!!!!!!!!!!!!!!!!!!!!')
 
         x = conv2d_resample.conv2d_resample(
             x=x,
@@ -670,7 +668,6 @@ class SynthesisNetwork(torch.nn.Module):
             w_idx = 0
             for res in self.block_resolutions:
                 block = getattr(self, f"b{res}")
-                print('w_idx: ', w_idx, ' block.num_conv ', block.num_conv, ' block.num_torgb ', block.num_torgb)
                 block_ws.append(ws.narrow(1, w_idx, block.num_conv + block.num_torgb))
                 w_idx += block.num_conv
 
@@ -722,6 +719,7 @@ class Generator(torch.nn.Module):
         #     x, z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff
         # )
         # img = self.synthesis(ws, **synthesis_kwargs)
+
         ws = self.mapping(x, c)
         img = self.synthesis(ws) 
 
@@ -1067,7 +1065,6 @@ class Discriminator(torch.nn.Module):
     def forward(self, img, c, **block_kwargs):
         x = None
         for res in self.block_resolutions:
-            print(f"b{res}")
             block = getattr(self, f"b{res}")
             x, img = block(x, img, **block_kwargs)
 

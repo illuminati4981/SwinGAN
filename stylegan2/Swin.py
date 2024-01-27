@@ -789,9 +789,7 @@ class SwinTransformer(nn.Module):
 
     def forward(self, x):
         # SwinGAN: Shallow Feature Extractor
-        print('x shape: ', x.shape)
         x = self.shallow_extractor(x)
-        print('x shape: ', x.shape)
         x = self.forward_features(x)
         x = self.head(x)
         return x

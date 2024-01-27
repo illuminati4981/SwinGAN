@@ -153,8 +153,7 @@ def training_loop(
         dataset=training_set, rank=rank, num_replicas=num_gpus, seed=random_seed
     )
 
-    ################################################################################################################
-    # print("batch_size: ", batch_size)
+    ### TODO: Fix Insufficient GPU Memory Problem
     batch_size = 1
     print("batch_size: ", batch_size)
 
@@ -203,6 +202,8 @@ def training_loop(
         for name, module in [("swin", swin), ("G", G), ("D", D), ("G_ema", G_ema)]:
             misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
 
+
+    ### TODO: Fix Network Printing Problem or Ditch it
     # Print network summary tables.
     if rank == 0:
         z = torch.empty([batch_gpu, G.z_dim], device=device)
@@ -293,6 +294,8 @@ def training_loop(
             phase.start_event = torch.cuda.Event(enable_timing=True)
             phase.end_event = torch.cuda.Event(enable_timing=True)
 
+
+    ### TODO: Fix Image Exporting Problem or Ditch it
     # Export sample images.
     grid_size = None
     grid_z = None
@@ -368,7 +371,6 @@ def training_loop(
                 phase_gen_c.split(batch_gpu)
                 for phase_gen_c in all_gen_c.split(batch_size)
             ]
-            print("All_gen_c ", all_gen_c)
 
         # Execute training phases.
         for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):
@@ -490,6 +492,7 @@ def training_loop(
                 print()
                 print("Aborting...")
 
+        # TODO: Fix Saving Logic
         # Save image snapshot.
 
         training_set_iterator = iter(
@@ -560,6 +563,8 @@ def training_loop(
             if rank == 0:
                 with open(snapshot_pkl, "wb") as f:
                     pickle.dump(snapshot_data, f)
+
+        ### TODO: Fix Evaluation Logic
 
         # Evaluate metrics.
         # if (snapshot_data is not None) and (len(metrics) > 0):

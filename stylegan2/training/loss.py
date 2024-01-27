@@ -58,9 +58,6 @@ class StyleGAN2Loss(Loss):
         with misc.ddp_sync(self.swin, sync):
             x = self.swin(x)
 
-        ### SwinGAN: Replace z with x [Done]
-        ### SwinGAN: Ensure x having the same dimensions as z [Done]
-
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, c)
 
@@ -80,7 +77,6 @@ class StyleGAN2Loss(Loss):
         with misc.ddp_sync(self.G_synthesis, sync):
             img = self.G_synthesis(ws)
 
-        print('img shape: ', img.shape)
         return img, ws
 
     def run_D(self, img, c, sync):
@@ -97,8 +93,7 @@ class StyleGAN2Loss(Loss):
         do_Gpl = (phase in ["Greg", "Gboth"]) and (self.pl_weight != 0)
         do_Dr1 = (phase in ["Dreg", "Dboth"]) and (self.r1_gamma != 0)
 
-        ### TODO: Make a duplicated batch of real_img for degradation before passing it into run_G
-        ### TODO: Call Degrade Function
+        ### TODO: Call Degradation Module
         deg_img = real_img 
 
         # Gmain: Maximize logits for generated images.
@@ -115,12 +110,13 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Gmain = torch.nn.functional.softplus(
                     -gen_logits # -log(sigmoid(gen_logits))
-                )
-                # TODO: Dimensional Problem => real_img VS　gen_img
-                # ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
+                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
+
                 training_stats.report("Loss/G/loss", loss_Gmain)
             with torch.autograd.profiler.record_function("Gmain_backward"):
                 loss_Gmain.mean().mul(gain).backward()
+
+        ### TODO: Fix Regularization Error
 
         # Gpl: Apply path length regularization.
         # if do_Gpl:
@@ -170,9 +166,8 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/scores/fake", gen_logits)
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(
-                    gen_logits  # -log(1 - sigmoid(gen_logits)) 
-                ) 
-                # ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
+                    gen_logits  # -log(1 - sigmoid(gen_logits))  
+                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
             with torch.autograd.profiler.record_function("Dgen_backward"):
                 loss_Dgen.mean().mul(gain).backward()
 
@@ -183,14 +178,8 @@ class StyleGAN2Loss(Loss):
                 "Dreal_Dr1" if do_Dmain and do_Dr1 else "Dreal" if do_Dmain else "Dr1"
             )
             with torch.autograd.profiler.record_function(name + "_forward"):
-                #####################################
-                #       Resize to 256 from 224      #
-                #####################################
-                # deg_img.resize_((1, 3, 256, 256))
-
                 real_img_tmp = deg_img.detach().requires_grad_(do_Dr1)
 
-                print("Size of real image: ", real_img_tmp.shape)
                 real_logits = self.run_D(real_img_tmp, real_c, sync=sync)
                 training_stats.report("Loss/scores/real", real_logits)
                 training_stats.report("Loss/signs/real", real_logits.sign())
