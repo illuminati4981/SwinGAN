@@ -157,6 +157,7 @@ def training_loop(
     batch_size = 1
     print("batch_size: ", batch_size)
 
+    # TODO: change to the costomized dataloader
     training_set_iterator = iter(
         torch.utils.data.DataLoader(
             dataset=training_set,
@@ -349,6 +350,8 @@ def training_loop(
     batch_idx = 0
     if progress_fn is not None:
         progress_fn(0, total_kimg)
+    
+    # Training Loop
     while True:
         # Fetch training data.
         with torch.autograd.profiler.record_function("data_fetch"):
@@ -376,7 +379,7 @@ def training_loop(
         for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):
             if batch_idx % phase.interval != 0:
                 continue
-
+    
             # Initialize gradient accumulation.
             if phase.start_event is not None:
                 phase.start_event.record(torch.cuda.current_stream(device))
