@@ -11,7 +11,6 @@ import torch
 from torch_utils import training_stats
 from torch_utils import misc
 from torch_utils.ops import conv2d_gradfix
-import os
 
 # ----------------------------------------------------------------------------
 
@@ -73,7 +72,7 @@ class StyleGAN2Loss(Loss):
                         torch.full_like(cutoff, ws.shape[1]),
                     )
                     ws[:, cutoff:] = self.G_mapping(
-                        torch.randn_like(z), c, skip_w_avg_update=True
+                        torch.randn_like(x), c, skip_w_avg_update=True
                     )[:, cutoff:]
         with misc.ddp_sync(self.G_synthesis, sync):
             img = self.G_synthesis(ws)
@@ -104,7 +103,7 @@ class StyleGAN2Loss(Loss):
                     deg_img,
                     gen_z,
                     gen_c,
-                    sync=(sync and not do_Gpl), # deg_img manually added
+                    sync=(sync and not do_Gpl),  # deg_img manually added
                 )  # May get synced by Gpl.
                 gen_logits = self.run_D(gen_img, gen_c, sync=False)
                 training_stats.report("Loss/scores/fake", gen_logits)
@@ -120,47 +119,47 @@ class StyleGAN2Loss(Loss):
         ### TODO: Fix Regularization Error
 
         # Gpl: Apply path length regularization.
-        # if do_Gpl:
-        #     with torch.autograd.profiler.record_function("Gpl_forward"):
-        #         # batch_size = gen_z.shape[0] // self.pl_batch_shrink 
-        #         batch_size = deg_img.shape[0] // self.pl_batch_shrink 
-        #         # print('deg_img~~~~~~~~ ', deg_img.shape[0] )
-        #         print('deg_img[:batch_size] ', deg_img[:batch_size])
-        #         gen_img, gen_ws = self.run_G(
-        #             deg_img[:batch_size],  # manually added
-        #             gen_z[:batch_size],
-        #             gen_c[:batch_size],
-        #             sync=sync,
-        #             isTraining=isTraining,
-        #         )
-        #         pl_noise = torch.randn_like(gen_img) / np.sqrt(
-        #             gen_img.shape[2] * gen_img.shape[3]
-        #         )
-        #         with torch.autograd.profiler.record_function(
-        #             "pl_grads"
-        #         ), conv2d_gradfix.no_weight_gradients():
-        #             pl_grads = torch.autograd.grad(
-        #                 outputs=[(gen_img * pl_noise).sum()],
-        #                 inputs=[gen_ws],
-        #                 create_graph=True,
-        #                 only_inputs=True,
-        #             )[0]
-        #         pl_lengths = pl_grads.square().sum(2).mean(1).sqrt()
-        #         pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
-        #         self.pl_mean.copy_(pl_mean.detach())
-        #         pl_penalty = (pl_lengths - pl_mean).square()
-        #         training_stats.report("Loss/pl_penalty", pl_penalty)
-        #         loss_Gpl = pl_penalty * self.pl_weight
-        #         training_stats.report("Loss/G/reg", loss_Gpl)
-        #     with torch.autograd.profiler.record_function("Gpl_backward"):
-        #         (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
+        if do_Gpl:
+          with torch.autograd.profiler.record_function("Gpl_forward"):
+                 # batch_size = gen_z.shape[0] // self.pl_batch_shrink 
+                 batch_size = deg_img.shape[0] #// self.pl_batch_shrink 
+                 print('batch size:', batch_size)
+                 print('deg_img shape:  ', deg_img.shape )
+                 print('deg_img[:batch_size] ', deg_img[:batch_size])
+                 gen_img, gen_ws = self.run_G(
+                     deg_img[:batch_size],  # manually added
+                     gen_z[:batch_size],
+                     gen_c[:batch_size],
+                     sync=sync,
+                 )
+                 pl_noise = torch.randn_like(gen_img) / np.sqrt(
+                     gen_img.shape[2] * gen_img.shape[3]
+                 )
+                 with torch.autograd.profiler.record_function(
+                     "pl_grads"
+                 ), conv2d_gradfix.no_weight_gradients():
+                     pl_grads = torch.autograd.grad(
+                         outputs=[(gen_img * pl_noise).sum()],
+                         inputs=[gen_ws],
+                         create_graph=True,
+                         only_inputs=True,
+                     )[0]
+                 pl_lengths = pl_grads.square().sum(2).mean(1).sqrt()
+                 pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
+                 self.pl_mean.copy_(pl_mean.detach())
+                 pl_penalty = (pl_lengths - pl_mean).square()
+                 training_stats.report("Loss/pl_penalty", pl_penalty)
+                 loss_Gpl = pl_penalty * self.pl_weight
+                 training_stats.report("Loss/G/reg", loss_Gpl)
+          with torch.autograd.profiler.record_function("Gpl_backward"):
+                 (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
 
         # Dmain: Minimize logits for generated images.
         loss_Dgen = 0
         if do_Dmain:
             with torch.autograd.profiler.record_function("Dgen_forward"):
                 gen_img, _gen_ws = self.run_G(
-                    deg_img, gen_z, gen_c, sync=False,
+                    deg_img, gen_z, gen_c, sync=False
                 )  # real image manually added
                 gen_logits = self.run_D(
                     gen_img, gen_c, sync=False
