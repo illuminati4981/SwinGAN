@@ -552,11 +552,13 @@ class SynthesisBlock(torch.nn.Module):
             if self.channels_last and not force_fp32
             else torch.contiguous_format
         )
+
         if fused_modconv is None:
             with misc.suppress_tracer_warnings():  # this value will be treated as a constant
-                fused_modconv = (not self.training) and (
-                    dtype == torch.float32 or int(x.shape[0]) == 1
-                )
+                fused_modconv = False
+                # fused_modconv = (not self.training) and (
+                #     dtype == torch.float32 or int(x.shape[0]) == 1
+                # )
 
         # Input.
         if self.in_channels == 0:
@@ -566,7 +568,7 @@ class SynthesisBlock(torch.nn.Module):
             misc.assert_shape(
                 x, [None, self.in_channels, self.resolution // 2, self.resolution // 2]
             )
-            x = x.to(dtype=dtype, memory_format=memory_format)
+            x = x.to(dtype=dtype, memory_format=memory_format) 
 
         # Main layers.
         if self.in_channels == 0:
@@ -622,6 +624,7 @@ class SynthesisNetwork(torch.nn.Module):
         super().__init__()
         self.w_dim = w_dim
         self.img_resolution = img_resolution
+        print('')
 
         #########################################
         # Hardcode to change the img_resolution #
@@ -675,6 +678,7 @@ class SynthesisNetwork(torch.nn.Module):
         for res, cur_ws in zip(self.block_resolutions, block_ws):
             block = getattr(self, f"b{res}")
             x, img = block(x, img, cur_ws, **block_kwargs)
+
         return img
 
 
@@ -698,6 +702,7 @@ class Generator(torch.nn.Module):
         self.z_dim = z_dim
         self.c_dim = c_dim
         self.w_dim = w_dim
+
         self.img_resolution = img_resolution
         self.img_channels = img_channels
         self.synthesis = SynthesisNetwork(
@@ -719,7 +724,6 @@ class Generator(torch.nn.Module):
         #     x, z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff
         # )
         # img = self.synthesis(ws, **synthesis_kwargs)
-
         ws = self.mapping(x, c)
         img = self.synthesis(ws) 
 
@@ -1006,7 +1010,6 @@ class Discriminator(torch.nn.Module):
         # Hardcode to change the img_resolution #
         #########################################
         # self.img_resolution = 256
-        
         self.img_resolution_log2 = int(np.log2(self.img_resolution))
 
         self.img_channels = img_channels
