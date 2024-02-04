@@ -605,6 +605,7 @@ class PatchEmbed(nn.Module):
         assert (
             H == self.img_size[0] and W == self.img_size[1]
         ), f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         x = x.to(device)
         x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
@@ -660,7 +661,7 @@ class SwinTransformer(nn.Module):
         in_chans=3,
         num_classes=512, # Changed to 512
         embed_dim=96,
-        depths=[2, 2, 18, 2],
+        depths=[2, 2, 6, 2],
         num_heads=[3, 6, 12, 24],
         window_size=7,
         mlp_ratio=4.0,
@@ -677,8 +678,7 @@ class SwinTransformer(nn.Module):
         **kwargs,
     ):
         super().__init__()
-
-        self.num_classes = num_classes
+        self.num_classes = 512
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.ape = ape
@@ -781,7 +781,7 @@ class SwinTransformer(nn.Module):
 
         for layer in self.layers:
             x = layer(x)
-
+         
         x = self.norm(x)  # B L C
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
