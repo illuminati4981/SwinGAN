@@ -12,7 +12,6 @@ from torch_utils import training_stats
 from torch_utils import misc
 from torch_utils.ops import conv2d_gradfix
 import os
-import PIL.Image
 
 # ----------------------------------------------------------------------------
 
@@ -22,28 +21,6 @@ class Loss:
         self, phase, real_img, real_c, gen_z, gen_c, sync, gain
     ):  # to be overridden by subclass
         raise NotImplementedError()
-
-
-# ----------------------------------------------------------------------------
-
-
-def save_image_grid(img, fname, drange, grid_size):
-    lo, hi = drange
-    img = np.asarray(img, dtype=np.float32)
-    img = (img - lo) * (255 / (hi - lo))
-    img = np.rint(img).clip(0, 255).astype(np.uint8)
-
-    gw, gh = grid_size
-    _N, C, H, W = img.shape
-    img = img.reshape(gh, gw, C, H, W)
-    img = img.transpose(0, 3, 1, 4, 2)
-    img = img.reshape(gh * H, gw * W, C)
-
-    assert C in [1, 3]
-    if C == 1:
-        PIL.Image.fromarray(img[:, :, 0], "L").save(fname)
-    if C == 3:
-        PIL.Image.fromarray(img, "RGB").save(fname)
 
 
 # ----------------------------------------------------------------------------
@@ -110,7 +87,7 @@ class StyleGAN2Loss(Loss):
             logits = self.D(img, c)
         return logits
 
-    def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, sync, gain, run_dir):
+    def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, sync, gain):
         assert phase in ["Gmain", "Greg", "Gboth", "Dmain", "Dreg", "Dboth"]
         do_Gmain = phase in ["Gmain", "Gboth"]
         do_Dmain = phase in ["Dmain", "Dboth"]

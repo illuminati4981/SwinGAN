@@ -238,7 +238,7 @@ def training_loop(
         ("G_synthesis", G.synthesis),
         ("D", D),
         (None, G_ema),
-        # ("augment_pipe", augment_pipe),
+        ("augment_pipe", augment_pipe),
     ]:
         if (
             (num_gpus > 1)
@@ -403,7 +403,6 @@ def training_loop(
                 gen_c=gen_c,
                 sync=sync,
                 gain=gain,
-                run_dir=run_dir,
             )
 
         # Update weights.
