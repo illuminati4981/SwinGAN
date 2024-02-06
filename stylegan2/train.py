@@ -18,11 +18,14 @@ import tempfile
 import torch
 import dnnlib
 
+from omegaconf import OmegaConf
+
 from training import training_loop
 from metrics import metric_main
 from torch_utils import training_stats
 from torch_utils import custom_ops
 from Swin import SwinTransformer
+
 
 #----------------------------------------------------------------------------
 
@@ -66,7 +69,8 @@ def setup_training_loop_kwargs(
     allow_tf32 = None, # Allow PyTorch to use TF32 for matmul and convolutions: <bool>, default = False
     nobench    = None, # Disable cuDNN benchmarking: <bool>, default = False
     workers    = None, # Override number of DataLoader workers: <int>, default = 3
-
+    train_config = None,
+    val_config = None,
 ):
     args = dnnlib.EasyDict()
 
@@ -409,7 +413,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
 
-# Dataset.
+# Dataset. 
 @click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
 @click.option('--cond', help='Train conditional model based on dataset labels [default: false]', type=bool, metavar='BOOL')
 @click.option('--subset', help='Train with only N images [default: all]', type=int, metavar='INT')
@@ -437,6 +441,10 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--nobench', help='Disable cuDNN benchmarking', type=bool, metavar='BOOL')
 @click.option('--allow-tf32', help='Allow PyTorch to use TF32 internally', type=bool, metavar='BOOL')
 @click.option('--workers', help='Override number of DataLoader workers', type=int, metavar='INT')
+
+# [x] Customized dataset config yaml
+@click.option('--train_config', help='Train config file', metavar='PATH', required=True)
+@click.option('--val_config', help='vaildation config file', metavar='PATH')
 
 def main(ctx, outdir, dry_run, **config_kwargs):
     """Train a GAN using the techniques described in the paper
@@ -515,6 +523,18 @@ def main(ctx, outdir, dry_run, **config_kwargs):
         run_desc, args = setup_training_loop_kwargs(**config_kwargs)
     except UserError as err:
         ctx.fail(err)
+
+    # degradation YAML config to dict
+    train_config_path = config_kwargs["train_config"]
+    assert train_config_path 
+    assert isinstance(train_config_path, str)
+    train_config = OmegaConf.load(train_config_path)
+    args.train_config  = OmegaConf.to_container(train_config, resolve=True)
+
+    val_config_path = config_kwargs["val_config"]
+    val_config = OmegaConf.load(val_config_path) if (val_config_path is not None) and isinstance(val_config_path, str) else None
+    args.val_config  = OmegaConf.to_container(val_config, resolve=True) if val_config else None
+
 
     # Pick output directory.
     prev_run_dirs = []

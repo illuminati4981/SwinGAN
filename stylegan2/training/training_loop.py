@@ -23,6 +23,7 @@ from torch_utils.ops import grid_sample_gradfix
 
 import legacy
 from metrics import metric_main
+from degradation.utils.common import instantiate_from_config
 
 # ----------------------------------------------------------------------------
 
@@ -126,6 +127,8 @@ def training_loop(
     allow_tf32=False,  # Enable torch.backends.cuda.matmul.allow_tf32 and torch.backends.cudnn.allow_tf32?
     abort_fn=None,  # Callback function for determining whether to abort training. Must return consistent results across ranks.
     progress_fn=None,  # Callback function for updating training progress. Called for all ranks.
+    train_config=None, # deg train config dict, config driiing
+    val_config=None # deg val config dict, config drilling
 ):
     # Initialize.
 
@@ -146,18 +149,19 @@ def training_loop(
     # Load training set.
     if rank == 0:
         print("Loading training set...")
+
+    ### TODO: Fix Insufficient GPU Memory Problem DUE TO BATCH SIZE
+    batch_size = 4
+    print("batch_size: ", batch_size)
+
+
+    ### Default training_set configs
     training_set = dnnlib.util.construct_class_by_name(
         **training_set_kwargs
     )  # subclass of training.dataset.Dataset
     training_set_sampler = misc.InfiniteSampler(
         dataset=training_set, rank=rank, num_replicas=num_gpus, seed=random_seed
     )
-
-    ### TODO: Fix Insufficient GPU Memory Problem
-    batch_size = 1
-    print("batch_size: ", batch_size)
-
-    # TODO: change to the costomized dataloader
     training_set_iterator = iter(
         torch.utils.data.DataLoader(
             dataset=training_set,
@@ -166,6 +170,11 @@ def training_loop(
             **data_loader_kwargs,
         )
     )
+
+    # TODO Initialized degradation transform here
+    deg_train_transform = instantiate_from_config(train_config["batch_transform"])
+    # deg_val_transform = instantiate_from_config(val_config["batch_transform"])
+
     if rank == 0:
         print()
         print("Num images: ", len(training_set))
@@ -351,13 +360,23 @@ def training_loop(
     if progress_fn is not None:
         progress_fn(0, total_kimg)
     
-    # Training Loop
+    # [ ] Training Loop
     while True:
         # Fetch training data.
-        with torch.autograd.profiler.record_function("data_fetch"):
-            phase_real_img, phase_real_c = next(training_set_iterator)
+        with torch.autograd.profiler.record_function("data_fetch"):                
+
+            phase_gt_img, phase_real_c = next(training_set_iterator) 
+
+            # TODO Transform for degradation
+            deg_result = deg_train_transform(phase_gt_img.to(torch.float32))
+            phase_real_img = deg_result["jpg"].permute(0, 3, 1, 2)
+            phase_deg_img = deg_result["hint"].permute(0, 3, 1, 2)
+
             phase_real_img = (
                 phase_real_img.to(device).to(torch.float32) / 127.5 - 1
+            ).split(batch_gpu)
+            phase_deg_img = (
+                phase_deg_img.to(device).to(torch.float32) / 127.5 - 1
             ).split(batch_gpu)
             phase_real_c = phase_real_c.to(device).split(batch_gpu)
             all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
@@ -387,14 +406,16 @@ def training_loop(
             phase.module.requires_grad_(True)
 
             # Accumulate gradients over multiple rounds.
-            for round_idx, (real_img, real_c, gen_z, gen_c) in enumerate(
-                zip(phase_real_img, phase_real_c, phase_gen_z, phase_gen_c)
+            for round_idx, (real_img, deg_img, real_c, gen_z, gen_c) in enumerate(
+                zip(phase_real_img, phase_deg_img, phase_real_c, phase_gen_z, phase_gen_c)
             ):
+
                 sync = round_idx == batch_size // (batch_gpu * num_gpus) - 1
                 gain = phase.interval
                 loss.accumulate_gradients(
                     phase=phase.name,
                     real_img=real_img,
+                    deg_img = deg_img,
                     real_c=real_c,
                     gen_z=gen_z,
                     gen_c=gen_c,
@@ -495,9 +516,11 @@ def training_loop(
                 print()
                 print("Aborting...")
 
-        # TODO: Fix Saving Logic
+        # TODO: Fix Saving Logic   # TODO why initialize iterator here again and next?
         # Save image snapshot.
 
+        ###############################################################
+        
         training_set_iterator = iter(
           torch.utils.data.DataLoader(
             dataset=training_set,
@@ -507,38 +530,40 @@ def training_loop(
             )
           )
 
-        img, _ = next(training_set_iterator)
-        print('Before swin => swin: ', img.shape)
-        img = (
-                img.to(device).to(torch.float32) / 127.5 - 1
-        ).split(batch_gpu)
-        img = swin(img[0])
-        print('After swin => swin: ', img.shape)
+        # img, _ = next(training_set_iterator)
+        # print('Before swin => swin: ', img.shape)
+        # img = (
+        #         img.to(device).to(torch.float32) / 127.5 - 1
+        # ).split(batch_gpu)
+        # img = swin(img[0])
+        # print('After swin => swin: ', img.shape)
 
-        if (
-            (rank == 0)
-            and (image_snapshot_ticks is not None)
-            and (done or cur_tick % image_snapshot_ticks == 0)
-        ):
-            # images = torch.cat(
-            #     [
-            #         G_ema(x=img, z=z, c=c).cpu()
-            #         for z, c in zip(grid_z, grid_c)
-            #     ]
-            # ).detach().numpy()
+        # if (
+        #     (rank == 0)
+        #     and (image_snapshot_ticks is not None)
+        #     and (done or cur_tick % image_snapshot_ticks == 0)
+        # ):
+        #     # images = torch.cat(
+        #     #     [
+        #     #         G_ema(x=img, z=z, c=c).cpu()
+        #     #         for z, c in zip(grid_z, grid_c)
+        #     #     ]
+        #     # ).detach().numpy()
 
-            images = torch.cat(
-                [
-                    G_ema(x=img, z=grid_z[0], c=grid_c[0]).cpu()
-                ]
-            ).detach().numpy()
+        #     images = torch.cat(
+        #         [
+        #             G_ema(x=img, z=grid_z[0], c=grid_c[0]).cpu()
+        #         ]
+        #     ).detach().numpy()
             
-            save_image_grid(
-                images,
-                os.path.join(run_dir, f"fakes{cur_nimg//1000:06d}.png"),
-                drange=[-1, 1],
-                grid_size=(1, 1),
-            )
+        #     save_image_grid(
+        #         images,
+        #         os.path.join(run_dir, f"fakes{cur_nimg//1000:06d}.png"),
+        #         drange=[-1, 1],
+        #         grid_size=(1, 1),
+        #     )
+        
+        ###############################################################
 
         # Save network snapshot.
         snapshot_pkl = None
