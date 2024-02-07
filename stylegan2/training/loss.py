@@ -17,7 +17,7 @@ from torch_utils.ops import conv2d_gradfix
 
 class Loss:
     def accumulate_gradients(
-        self, phase, real_img, real_c, gen_z, gen_c, sync, gain
+        self, phase, real_img, deg_img, real_c, gen_z, gen_c, sync, gain
     ):  # to be overridden by subclass
         raise NotImplementedError()
 
@@ -86,15 +86,13 @@ class StyleGAN2Loss(Loss):
             logits = self.D(img, c)
         return logits
 
-    def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, sync, gain):
+    def accumulate_gradients(self, phase, real_img, deg_img, real_c, gen_z, gen_c, sync, gain):
+        ###  TODO: adding deg_img into params and the abstract class function
         assert phase in ["Gmain", "Greg", "Gboth", "Dmain", "Dreg", "Dboth"]
         do_Gmain = phase in ["Gmain", "Gboth"]
         do_Dmain = phase in ["Dmain", "Dboth"]
         do_Gpl = (phase in ["Greg", "Gboth"]) and (self.pl_weight != 0)
         do_Dr1 = (phase in ["Dreg", "Dboth"]) and (self.r1_gamma != 0)
-
-        ### TODO: Call Degradation Module
-        deg_img = real_img 
 
         # Gmain: Maximize logits for generated images.
         if do_Gmain:
