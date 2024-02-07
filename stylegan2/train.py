@@ -112,7 +112,8 @@ def setup_training_loop_kwargs(
     assert data is not None
     assert isinstance(data, str)
     args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data, use_labels=True, max_size=None, xflip=False)
-    args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
+    # args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
+    args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=1, prefetch_factor=2)
     try:
         training_set = dnnlib.util.construct_class_by_name(**args.training_set_kwargs) # subclass of training.dataset.Dataset
         args.training_set_kwargs.resolution = training_set.resolution # be explicit about resolution
@@ -292,7 +293,7 @@ def setup_training_loop_kwargs(
     assert augpipe in augpipe_specs
     if aug != 'noaug':
         args.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **augpipe_specs[augpipe])
-
+    workers
     # ----------------------------------
     # Transfer learning: resume, freezed
     # ----------------------------------
@@ -497,7 +498,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     PATCH_SIZE = 1
     IN_CHANS = 3
     EMBED_DIM = 96
-    DEPTHS = [2, 2, 18, 2]
+    DEPTHS = [2, 2, 6, 2]
     NUM_HEADS = [3, 6, 12, 24]
     WINDOW_SIZE = 7
     MLP_RATIO = 4.
@@ -517,7 +518,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
                             qkv_bias=QKV_BIAS, 
                             qk_scale=QK_SCALE, 
                             ape=APE,
-                            patch_norm=PATCH_NORM,).to(device)
+                            patch_norm=PATCH_NORM,).to(device).requires_grad_(False)
     
     try:
         run_desc, args = setup_training_loop_kwargs(**config_kwargs)
