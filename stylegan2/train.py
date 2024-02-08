@@ -22,7 +22,8 @@ from training import training_loop
 from metrics import metric_main
 from torch_utils import training_stats
 from torch_utils import custom_ops
-from Swin import SwinTransformer
+#from Swin import SwinTransformer
+from CustomSwing import CustomSwin
 
 #----------------------------------------------------------------------------
 
@@ -499,18 +500,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     APE = False
     PATCH_NORM = True
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    swin = SwinTransformer(img_size=IMAGE_SIZE,
-                            patch_size=PATCH_SIZE, 
-                            in_chans=IN_CHANS, 
-                            embed_dim=EMBED_DIM, 
-                            depths=DEPTHS, 
-                            num_heads=NUM_HEADS, 
-                            window_size=WINDOW_SIZE,
-                            mlp_ratio=MLP_RATIO, 
-                            qkv_bias=QKV_BIAS, 
-                            qk_scale=QK_SCALE, 
-                            ape=APE,
-                            patch_norm=PATCH_NORM,).to(device).requires_grad_(False)
+    swin = CustomSwin.to(device).requires_grad_(False)
     
     try:
         run_desc, args = setup_training_loop_kwargs(**config_kwargs)
