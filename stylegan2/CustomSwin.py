@@ -18,11 +18,8 @@ class CustomSwin(nn.Module):
 
     def forward(self, x):
         x = self.shallow_extractor(x)
-        print(x.shape)
         x = self.swin(x).pooler_output
-        print(x.shape)
         x = self.head(x)
-        print(x.shape)
         return x
 
     
