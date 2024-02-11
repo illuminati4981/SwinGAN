@@ -23,7 +23,7 @@ from metrics import metric_main
 from torch_utils import training_stats
 from torch_utils import custom_ops
 #from Swin import SwinTransformer
-from CustomSwing import CustomSwin
+from CustomSwin import CustomSwin
 
 #----------------------------------------------------------------------------
 
@@ -500,7 +500,8 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     APE = False
     PATCH_NORM = True
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    swin = CustomSwin.to(device).requires_grad_(False)
+    swin = CustomSwin().to(device).requires_grad_(False)
+    print(swin)
     
     try:
         run_desc, args = setup_training_loop_kwargs(**config_kwargs)
@@ -545,7 +546,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
 
     # Launch processes.
     print('Launching processes...')
-    torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_start_method('spawn', force=True)
     with tempfile.TemporaryDirectory() as temp_dir:
         if args.num_gpus == 1:
             subprocess_fn(rank=0, args=args, temp_dir=temp_dir, swin=swin)
