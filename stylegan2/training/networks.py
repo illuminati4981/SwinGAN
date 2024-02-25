@@ -677,6 +677,7 @@ class SynthesisNetwork(torch.nn.Module):
         x = img = None
         for res, cur_ws in zip(self.block_resolutions, block_ws):
             block = getattr(self, f"b{res}")
+            ### Input parameters
             x, img = block(x, img, cur_ws, **block_kwargs)
 
         return img

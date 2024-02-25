@@ -217,6 +217,16 @@ def make_transform(
     def center_crop(width, height, img):
         crop = np.min(img.shape[:2])
         img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
+
+        # repeat the c
+        if img.ndim == 2:
+            img = img[:, np.newaxis]
+            img = np.repeat(img, 3, axis=2)
+        elif img.ndim < 2:
+            img = np.zeros((height, width, 3))
+            
+        assert img.ndim == 3, f"img shape: {img.shape}, img dim: {img.ndim}"
+
         img = PIL.Image.fromarray(img, 'RGB')
         img = img.resize((width, height), resample)
         return np.array(img)
@@ -416,7 +426,7 @@ def convert_dataset(
             width = dataset_attrs['width']
             height = dataset_attrs['height']
             if width != height:
-                error(f'Image dimensions after scale and crop are required to be square.  Got {width}x{height}')
+                error(f'{idx}: Image dimensions after scale and crop are required to be square.  Got {width}x{height}')
             if dataset_attrs['channels'] not in [1, 3]:
                 error('Input images must be stored as RGB or grayscale')
             if width != 2 ** int(np.floor(np.log2(width))):

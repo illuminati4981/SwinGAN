@@ -121,9 +121,9 @@ class StyleGAN2Loss(Loss):
           with torch.autograd.profiler.record_function("Gpl_forward"):
                  # batch_size = gen_z.shape[0] // self.pl_batch_shrink 
                  batch_size = deg_img.shape[0] #// self.pl_batch_shrink 
-                 print('batch size:', batch_size)
-                 print('deg_img shape:  ', deg_img.shape )
-                 print('deg_img[:batch_size] ', deg_img[:batch_size])
+                #  print('batch size:', batch_size)
+                #  print('deg_img shape:  ', deg_img.shape )
+                #  print('deg_img[:batch_size] ', deg_img[:batch_size])
                  gen_img, gen_ws = self.run_G(
                      deg_img[:batch_size],  # manually added
                      gen_z[:batch_size],
