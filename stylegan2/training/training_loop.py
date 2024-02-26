@@ -26,6 +26,8 @@ from metrics import metric_main
 from degradation.utils.common import instantiate_from_config
 from torchvision.transforms import ToTensor
 from metrics.fid import calculate_fid
+from metrics.restoration_metrics import calculate_psnr_pt
+from metrics.restoration_metrics import LPIPS
 
 # ----------------------------------------------------------------------------
 
@@ -354,7 +356,6 @@ def training_loop(
             print("Skipping tfevents export:", err)
 
     # Train.
-
     if rank == 0:
         print(f"Training for {total_kimg} kimg...")
         print()
@@ -364,7 +365,7 @@ def training_loop(
     tick_start_time = time.time()
     maintenance_time = tick_start_time - start_time
     batch_idx = 0
-    fids = []
+    fids, psnrs, lpips = [], [], []
     if progress_fn is not None:
         progress_fn(0, total_kimg)
 
@@ -388,6 +389,7 @@ def training_loop(
             phase_deg_img = (
                 phase_deg_img.to(device).to(torch.float32) / 127.5 - 1
             ).split(batch_gpu)
+
             phase_real_c = phase_real_c.to(device).split(batch_gpu)
             all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
             all_gen_z = [
@@ -538,13 +540,14 @@ def training_loop(
         if (rank == 0) and (image_snapshot_ticks is not None) and (done or cur_tick % image_snapshot_ticks == 0):
           real_img = phase_real_img[0].cpu()
           deg_img = phase_deg_img[0]
-          gen_img = swin(deg_img)
+          gen_img, stage1_output, stage2_output, stage3_output, stage4_output = swin(deg_img)
+          noises = [stage1_output, stage2_output, stage3_output, stage4_output]
 
           G = G.to('cpu')
           G_ema = G_ema.to('cuda')
 
           gen_img = G_ema.mapping(gen_img, grid_c[0])
-          gen_img = G_ema.synthesis(gen_img).cpu()
+          gen_img = G_ema.synthesis(gen_img, noises).cpu()
 
           deg_img = phase_deg_img[0].cpu()
           count = cur_nimg - batch_size
@@ -554,6 +557,27 @@ def training_loop(
           G = G.to('cuda')
           phase_real_img[0].to('cuda')
           phase_deg_img[0].to('cuda')
+
+
+          # Evaluate metrics.
+          print('Evaluating Model...')
+
+          # FID
+          fid = calculate_fid(batch_size, phase_real_img[0], gen_img)
+          phase_real_img[0].to('cuda')
+          fids.append(fid)
+          print('fids: ', fids)
+
+          # PSNR
+          # psnr = calculate_psnr_pt(phase_real_img[0], gen_img, 0)
+          # psnrs.append(psnr)
+          # print('psnrs: ', psnrs)
+
+          # LPIPS
+          # lpips_model = LPIPS(net='alex')
+          # lpips_value = LPIPS(phase_real_img[0], gen_img, False)
+          # lpips.append(lpips_value)
+          # print('lpips: ', lpips)
 
 
         # Save network snapshot.
@@ -584,37 +608,6 @@ def training_loop(
               with open(snapshot_pkl, "wb") as f:
                   pickle.dump(snapshot_data, f)
 
-
-        ### TODO: Fix Evaluation Logic
-        print('Evaluating Model...')
-        # fid = None # dummy
-        # print('phase_real_img: ', phase_real_img[0].shape)
-        # print('gen_img: ', gen_img[0].shape)
-        # fid = calculate_fid(batch_size, phase_real_img[0], gen_img)
-        # phase_real_img[0].to('cuda')
-        # fids.append(fid)
-        # print('fid: ', fid)
-        # print('fids: ', fids)
-
-        # Evaluate metrics.
-        # if (snapshot_data is not None) and (len(metrics) > 0):
-        #     if rank == 0:
-        #         print("Evaluating metrics...")
-        #     for metric in metrics:
-        #         result_dict = metric_main.calc_metric(
-        #             metric=metric,
-        #             G=snapshot_data["G_ema"],
-        #             dataset_kwargs=training_set_kwargs,
-        #             num_gpus=num_gpus,
-        #             rank=rank,
-        #             device=device,
-        #         )
-        #         if rank == 0:
-        #             metric_main.report_metric(
-        #                 result_dict, run_dir=run_dir, snapshot_pkl=snapshot_pkl
-        #             )
-        #         stats_metrics.update(result_dict.results)
-        # del snapshot_data  # conserve memory
 
         ### TODO: statistics
         # # Collect statistics.

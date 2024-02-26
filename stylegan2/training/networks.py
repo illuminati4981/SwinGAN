@@ -370,22 +370,25 @@ class SynthesisLayer(torch.nn.Module):
             self.noise_strength = torch.nn.Parameter(torch.zeros([]))
         self.bias = torch.nn.Parameter(torch.zeros([out_channels]))
 
-    def forward(self, x, w, noise_mode="random", fused_modconv=True, gain=1):
+    def forward(self, x, w, noise, noise_mode="random", fused_modconv=True, gain=1):
         assert noise_mode in ["random", "const", "none"]
         in_resolution = self.resolution // self.up
         misc.assert_shape(x, [None, self.weight.shape[1], in_resolution, in_resolution])
         styles = self.affine(w)
 
-        noise = None
-        if self.use_noise and noise_mode == "random":
-            noise = (
-                torch.randn(
-                    [x.shape[0], 1, self.resolution, self.resolution], device=x.device
-                )
-                * self.noise_strength
-            )
-        if self.use_noise and noise_mode == "const":
-            noise = self.noise_const * self.noise_strength
+        if noise != None:
+          noise = noise * self.noise_strength
+        else: 
+          if self.use_noise and noise_mode == "random":
+              noise = (
+                  torch.randn(
+                      [x.shape[0], 1, self.resolution, self.resolution], device=x.device
+                  )
+                  * self.noise_strength
+              )
+          if self.use_noise and noise_mode == "const":
+              noise = self.noise_const * self.noise_strength
+
 
         flip_weight = self.up == 1  # slightly faster
         x = modulated_conv2d(
@@ -543,7 +546,7 @@ class SynthesisBlock(torch.nn.Module):
                 channels_last=self.channels_last,
             )
 
-    def forward(self, x, img, ws, force_fp32=False, fused_modconv=None, **layer_kwargs):
+    def forward(self, x, img, ws, noise=None, force_fp32=False, fused_modconv=None, **layer_kwargs):
         misc.assert_shape(ws, [None, self.num_conv + self.num_torgb, self.w_dim])
         w_iter = iter(ws.unbind(dim=1))
         dtype = torch.float16 if self.use_fp16 and not force_fp32 else torch.float32
@@ -572,10 +575,10 @@ class SynthesisBlock(torch.nn.Module):
 
         # Main layers.
         if self.in_channels == 0:
-            x = self.conv1(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            x = self.conv1(x, next(w_iter), noise, fused_modconv=fused_modconv, **layer_kwargs)
         elif self.architecture == "resnet":
             y = self.skip(x, gain=np.sqrt(0.5))
-            x = self.conv0(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            x = self.conv0(x, next(w_iter), noise, fused_modconv=fused_modconv, **layer_kwargs)
             x = self.conv1(
                 x,
                 next(w_iter),
@@ -585,8 +588,8 @@ class SynthesisBlock(torch.nn.Module):
             )
             x = y.add_(x)
         else:
-            x = self.conv0(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
-            x = self.conv1(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            x = self.conv0(x, next(w_iter), noise, fused_modconv=fused_modconv, **layer_kwargs)
+            x = self.conv1(x, next(w_iter), noise, fused_modconv=fused_modconv, **layer_kwargs)
 
         # ToRGB.
         if img is not None:
@@ -663,7 +666,7 @@ class SynthesisNetwork(torch.nn.Module):
               self.num_ws += block.num_torgb
             setattr(self, f"b{res}", block)
 
-    def forward(self, ws, **block_kwargs):
+    def forward(self, ws, unet_noises, **block_kwargs):
         block_ws = []
         with torch.autograd.profiler.record_function("split_ws"):
             misc.assert_shape(ws, [None, self.num_ws, self.w_dim])
@@ -678,7 +681,17 @@ class SynthesisNetwork(torch.nn.Module):
         for res, cur_ws in zip(self.block_resolutions, block_ws):
             block = getattr(self, f"b{res}")
             ### Input parameters
-            x, img = block(x, img, cur_ws, **block_kwargs)
+            if res == 8:
+              noise = unet_noises[3]
+            elif res == 16:
+              noise = unet_noises[2]
+            elif res == 32:
+              noise = unet_noises[1]
+            elif res == 64:
+              noise = unet_noises[0]
+            else:
+              noise = None
+            x, img = block(x, img, cur_ws, noise, **block_kwargs)
 
         return img
 
@@ -719,14 +732,14 @@ class Generator(torch.nn.Module):
         )
 
     def forward(
-        self, x, z, c, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs
+        self, x, z, c, unet_noises, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs
     ):
         # ws = self.mapping(
         #     x, z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff
         # )
         # img = self.synthesis(ws, **synthesis_kwargs)
         ws = self.mapping(x, c)
-        img = self.synthesis(ws) 
+        img = self.synthesis(ws, unet_noises) 
 
         return img
 
