@@ -56,8 +56,8 @@ class StyleGAN2Loss(Loss):
 
     def run_G(self, x, z, c, sync):
         with misc.ddp_sync(self.swin, sync):
-            x = self.swin(x)
-
+            x, stage1_output, stage2_output, stage3_output, stage4_output = self.swin(x)
+            noises = [stage1_output, stage2_output, stage3_output, stage4_output]
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, c)
 
@@ -75,7 +75,7 @@ class StyleGAN2Loss(Loss):
                         torch.randn_like(x), c, skip_w_avg_update=True
                     )[:, cutoff:]
         with misc.ddp_sync(self.G_synthesis, sync):
-            img = self.G_synthesis(ws)
+            img = self.G_synthesis(ws, noises)
 
         return img, ws
 
