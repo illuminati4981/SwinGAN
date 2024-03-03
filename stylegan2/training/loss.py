@@ -11,7 +11,9 @@ import torch
 from torch_utils import training_stats
 from torch_utils import misc
 from torch_utils.ops import conv2d_gradfix
-
+from torchvision import transforms
+from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+import dnnlib
 # ----------------------------------------------------------------------------
 
 
@@ -20,6 +22,37 @@ class Loss:
         self, phase, real_img, deg_img, real_c, gen_z, gen_c, sync, gain
     ):  # to be overridden by subclass
         raise NotImplementedError()
+
+
+def extract_feats(x, swin):
+    # url = 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metrics/vgg16.pt'
+    # with dnnlib.util.open_url(url) as f:
+    #     vgg16 = torch.jit.load(f).eval().to('cpu')
+
+    face_pool = torch.nn.AdaptiveAvgPool2d((224, 224))
+    x = face_pool(x)
+    x_feats, _, _, _, _= swin(x)
+    return x_feats
+
+
+def id_loss(y_hat, y, swin, batch_size=16):
+    y_hat = y_hat.to('cpu')
+    y = y.to('cpu')
+    swin = swin.to('cpu')
+    y_feats = extract_feats(y, swin)  # Otherwise use the feature from there
+    y_hat_feats = extract_feats(y_hat, swin)
+    y_feats = y_feats.detach()
+    loss = 0
+
+    for i in range(batch_size):
+        diff_target = y_hat_feats[i].dot(y_feats[i])
+        loss += 1 - diff_target
+
+    y_hat.to('cuda')
+    y.to('cuda')
+    swin.to('cuda')
+
+    return loss / batch_size
 
 
 # ----------------------------------------------------------------------------
@@ -56,7 +89,11 @@ class StyleGAN2Loss(Loss):
 
     def run_G(self, x, z, c, sync):
         with misc.ddp_sync(self.swin, sync):
-            x, stage1_output, stage2_output, stage3_output, stage4_output = self.swin(x)
+            ### Normalization for swin transformer
+            swin_normalization = transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
+            swin_input = swin_normalization(x)  
+
+            x, stage1_output, stage2_output, stage3_output, stage4_output = self.swin(swin_input)
             noises = [stage1_output, stage2_output, stage3_output, stage4_output]
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, c)
@@ -93,6 +130,7 @@ class StyleGAN2Loss(Loss):
         do_Dmain = phase in ["Dmain", "Dboth"]
         do_Gpl = (phase in ["Greg", "Gboth"]) and (self.pl_weight != 0)
         do_Dr1 = (phase in ["Dreg", "Dboth"]) and (self.r1_gamma != 0)
+        loss_value = 0
 
         # Gmain: Maximize logits for generated images.
         if do_Gmain:
@@ -108,22 +146,19 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Gmain = torch.nn.functional.softplus(
                     -gen_logits # -log(sigmoid(gen_logits))
-                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
+                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) 
+                + id_loss(gen_img, real_img, self.swin)
 
                 training_stats.report("Loss/G/loss", loss_Gmain)
             with torch.autograd.profiler.record_function("Gmain_backward"):
                 loss_Gmain.mean().mul(gain).backward()
-
-        ### TODO: Fix Regularization Error
+            loss_value = loss_Gmain.mean().mul(gain)
 
         # Gpl: Apply path length regularization.
         if do_Gpl:
-          with torch.autograd.profiler.record_function("Gpl_forward"):
-                 # batch_size = gen_z.shape[0] // self.pl_batch_shrink 
+            with torch.autograd.profiler.record_function("Gpl_forward"):
                  batch_size = deg_img.shape[0] #// self.pl_batch_shrink 
-                #  print('batch size:', batch_size)
-                #  print('deg_img shape:  ', deg_img.shape )
-                #  print('deg_img[:batch_size] ', deg_img[:batch_size])
+
                  gen_img, gen_ws = self.run_G(
                      deg_img[:batch_size],  # manually added
                      gen_z[:batch_size],
@@ -149,8 +184,9 @@ class StyleGAN2Loss(Loss):
                  training_stats.report("Loss/pl_penalty", pl_penalty)
                  loss_Gpl = pl_penalty * self.pl_weight
                  training_stats.report("Loss/G/reg", loss_Gpl)
-          with torch.autograd.profiler.record_function("Gpl_backward"):
+            with torch.autograd.profiler.record_function("Gpl_backward"):
                  (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
+            # loss_value = (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain)
 
         # Dmain: Minimize logits for generated images.
         loss_Dgen = 0
@@ -166,9 +202,12 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(
                     gen_logits  # -log(1 - sigmoid(gen_logits))  
-                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
+                ) 
+                # + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
+                # + id_loss(gen_img, real_img, swin)
             with torch.autograd.profiler.record_function("Dgen_backward"):
                 loss_Dgen.mean().mul(gain).backward()
+            # loss_value = loss_Dgen.mean().mul(gain)
 
         # Dmain: Maximize logits for real images.
         # Dr1: Apply R1 regularization.
@@ -208,6 +247,10 @@ class StyleGAN2Loss(Loss):
 
             with torch.autograd.profiler.record_function(name + "_backward"):
                 (real_logits * 0 + loss_Dreal + loss_Dr1).mean().mul(gain).backward()
+
+            # loss_value = (real_logits * 0 + loss_Dreal + loss_Dr1).mean().mul(gain)
+        
+        return loss_value
 
 
 # ----------------------------------------------------------------------------

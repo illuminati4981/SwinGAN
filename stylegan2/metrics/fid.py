@@ -22,11 +22,11 @@ from metrics.fid_inception import InceptionV3
 def get_activations(batch_size, batch):
     """Calculates the activations of the pool_3 layer for all images."""
     device = 'cpu'
+    dims = 2048
+    block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[dims]
+    model = InceptionV3([block_idx]).to('cpu')
 
-    model = InceptionV3([3]).to(device)
-    model.eval()
-
-    pred_arr = np.empty((batch_size, 3))
+    pred_arr = np.empty((batch_size, dims))
     start_idx = 0
 
     batch = batch.to(device)
@@ -39,10 +39,10 @@ def get_activations(batch_size, batch):
         pred = adaptive_avg_pool2d(pred, output_size=(1, 1))
 
     pred = pred.squeeze(3).squeeze(2).cpu().numpy()
-    pred_arr[start_idx:start_idx + pred.shape[0]] = pred
-    start_idx = start_idx + pred.shape[0]
+    # pred_arr[start_idx:start_idx + pred.shape[0]] = pred
+    # start_idx = start_idx + pred.shape[0]
 
-    return pred_arr
+    return pred
 
 
 def calculate_activation_statistics(batch_size, batch):
@@ -119,11 +119,6 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
 
 def calculate_fid(batch_size, real_img, gen_img):
     """Calculates the FID of two paths"""
-    dims = 2048
-    block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[dims]
-
-    model = InceptionV3([block_idx]).to('cpu')
-
     m1, s1 = calculate_activation_statistics(batch_size, real_img)
     m2, s2 = calculate_activation_statistics(batch_size, gen_img)
 
