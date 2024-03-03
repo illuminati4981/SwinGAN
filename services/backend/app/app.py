@@ -1,10 +1,11 @@
-import os
 from flask import Flask, request, jsonify, send_file
 from PIL import Image
 import io
+import os
+import datetime as datatime
 
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = "..\static\generated_images"
+app.config["UPLOAD_FOLDER"] = "./static/images"
 app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg"}
 
 def generate_image(input_image):
@@ -18,10 +19,16 @@ def generate():
         return jsonify({"error": "No input image found."}), 400
 
     file = request.files["input_image"]
-    if file:
-        input_image = Image.open(file.stream)
+    if file and allowed_file(file.filename):
+        input_image = Image.open(file)
+
+        # input_image_path = os.path.join(app.config["UPLOAD_FOLDER"], "input_image.png")
+        # input_image.save(input_image_path)
+
         generated_image = generate_image(input_image)
-        print(input_image, generated_image)
+
+        # generated_image_path = os.path.join(app.config["UPLOAD_FOLDER"], "generated_image.png")
+        # generated_image.save(generated_image_path)
 
         generated_image_io = io.BytesIO()
         generated_image.save(generated_image_io, format='PNG')
