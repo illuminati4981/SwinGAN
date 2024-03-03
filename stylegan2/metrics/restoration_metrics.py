@@ -31,7 +31,7 @@ def rgb2ycbcr_pt(img, y_only=False):
 
 
 # For PSNR
-def calculate_psnr_pt(img, img2, crop_border, test_y_channel=False):
+def calculate_psnr_pt(img, img2, crop_border, test_y_channel=False, batch_size=16):
     """Calculate PSNR (Peak Signal-to-Noise Ratio) (PyTorch version).
 
     Reference: https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio
@@ -45,7 +45,9 @@ def calculate_psnr_pt(img, img2, crop_border, test_y_channel=False):
     Returns:
         float: PSNR result.
     """
-
+    img = (img.to('cpu') + 1) * 127.5 / 255
+    img2 = (img2.to('cpu') + 1) * 127.5 / 255
+    
     assert img.shape == img2.shape, (f'Image shapes are different: {img.shape}, {img2.shape}.')
 
     if crop_border != 0:
@@ -60,7 +62,13 @@ def calculate_psnr_pt(img, img2, crop_border, test_y_channel=False):
     img2 = img2.to(torch.float64)
 
     mse = torch.mean((img - img2)**2, dim=[1, 2, 3])
-    return 10. * torch.log10(1. / (mse + 1e-8))
+    results = 10. * torch.log10(1. / (mse + 1e-8)) 
+    result = 0
+    for i in range(batch_size):
+      result += results[i]
+    result /= batch_size
+
+    return result
 
 
 # For LPIPS
@@ -86,7 +94,7 @@ class LPIPS:
         frozen_module(self.model)
     
     @torch.no_grad()
-    def __call__(self, img1: torch.Tensor, img2: torch.Tensor, normalize: bool) -> torch.Tensor:
+    def __call__(self, img1: torch.Tensor, img2: torch.Tensor, normalize: bool, batch_size=16) -> torch.Tensor:
         """
         Compute LPIPS.
         
@@ -100,55 +108,16 @@ class LPIPS:
         Returns:
             lpips_values (torch.Tensor): The lpips scores of this batch.
         """
-        return self.model(img1, img2, normalize=normalize)
+        img1, img2 = img1.to('cpu'), img2.to('cpu')
+        returned_value = self.model(img1, img2, normalize=normalize)
+        result = 0
+        for i in range(batch_size):
+          result += returned_value[i][0][0]
+        result /= batch_size
+        return result
     
     def to(self, device: str) -> "LPIPS":
         self.model.to(device)
         return self
-
-
-# For FID
-# https://github.com/mseitzer/pytorch-fid/blob/master/tests/test_fid_score.py
-def calculate_fid(img1: torch.Tensor, img2: torch.Tensor):
-  img1, img2 = img1.resize((256 * 256 * 3)), img2.resize((256 * 256 * 3))
-  # img1, img2 = torch.squeeze(img1), torch.squeeze(img2)
-  # img1, img2 = torch.squeeze(img1), torch.squeeze(img2)
-  print(img1.shape)
-  print(img2.shape)
-  mu1, mu2 = np.mean(img1.numpy(), 0), np.mean(img2.numpy(), 0)
-  sigma1, sigma2 = np.cov(img1, rowvar=False), np.cov(img2, rowvar=False)
-
-  mu1 = np.atleast_1d(mu1)
-  mu2 = np.atleast_1d(mu2)
-  sigma1 = np.atleast_2d(sigma1)
-  sigma2 = np.atleast_2d(sigma2)
-
-  assert mu1.shape == mu2.shape, \
-    'Training and test mean vectors have different lengths'
-  assert sigma1.shape == sigma2.shape, \
-    'Training and test covariances have different dimensions'
-
-  diff = mu1 - mu2
-
-  # Product might be almost singular
-  covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
-  if not np.isfinite(covmean).all():
-      msg = ('fid calculation produces singular product; '
-              'adding %s to diagonal of cov estimates') % eps
-      print(msg)
-      offset = np.eye(sigma1.shape[0]) * eps
-      covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
-
-  # Numerical error might give slight imaginary component
-  if np.iscomplexobj(covmean):
-      if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
-          m = np.max(np.abs(covmean.imag))
-          raise ValueError('Imaginary component {}'.format(m))
-      covmean = covmean.real
-
-  tr_covmean = np.trace(covmean)
-
-  return (diff.dot(diff) + np.trace(sigma1)
-          + np.trace(sigma2) - 2 * tr_covmean)
 
 
