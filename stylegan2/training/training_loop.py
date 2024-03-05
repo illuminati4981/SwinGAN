@@ -31,6 +31,7 @@ from metrics.restoration_metrics import LPIPS
 from torchvision import transforms
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 
+
 # ----------------------------------------------------------------------------
 
 def setup_snapshot_image_grid(training_set, random_seed=0):
@@ -136,7 +137,7 @@ def training_loop(
     val_config=None # deg val config dict, config drilling
 ):
     # Initialize.
-    image_snapshot_ticks=5
+    image_snapshot_ticks=10
     network_snapshot_ticks=50
     total_kimg = 10000
     start_time = time.time()
@@ -315,12 +316,18 @@ def training_loop(
                     name=name + "reg", module=module, opt=opt, interval=reg_interval
                 )
             ]
+
+
+    ### Testing: LPIPS + L1
+    # G_phase = None
     for phase in phases:
         phase.start_event = None
         phase.end_event = None
         if rank == 0:
             phase.start_event = torch.cuda.Event(enable_timing=True)
             phase.end_event = torch.cuda.Event(enable_timing=True)
+        if phase.name == 'Gmain':
+          G_phase = phase
 
 
     ### TODO: Fix Image Exporting Problem or Ditch it
@@ -421,6 +428,62 @@ def training_loop(
         print('Execute training phases')
         loss_values = []
         
+        ##### Testing LPIPS + L1
+        # for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):
+        #     ### Weird Behavior: Skipping ###
+        #     # if batch_idx % phase.interval != 0:
+        #     #     print('skipped iteration')
+        #     #     continue
+    
+        #     # Initialize gradient accumulation.
+        #     if phase.start_event is not None:
+        #         phase.start_event.record(torch.cuda.current_stream(device))
+        #     G.zero_grad(set_to_none=True)
+        #     G_phase.module.requires_grad_(True)
+
+        #     swin_opt.zero_grad(set_to_none=True)
+        #     swin.requires_grad_(True)
+
+        #     # Accumulate gradients over multiple rounds.
+        #     for round_idx, (real_img, deg_img, real_c, gen_z, gen_c) in enumerate(
+        #         zip(phase_real_img, phase_deg_img, phase_real_c, phase_gen_z, phase_gen_c)
+        #     ):
+        #         sync = round_idx == batch_size // (batch_gpu * num_gpus) - 1
+        #         gain = phase.interval
+        #         loss_value = loss.accumulate_gradients(
+        #             phase=phase.name,
+        #             real_img=real_img,
+        #             deg_img = real_img,
+        #             real_c=real_c,
+        #             gen_z=gen_z,
+        #             gen_c=gen_c,
+        #             sync=sync,
+        #             gain=gain,
+        #         )
+
+        #         loss_values.append(loss_value)
+
+        #     # Update weights.
+        #     G.requires_grad_(False)
+        #     swin.requires_grad_(False)
+        #     with torch.autograd.profiler.record_function(phase.name + "_opt"):
+        #         for param in G.parameters():
+        #             if param.grad is not None:
+        #                 misc.nan_to_num(
+        #                     param.grad, nan=0, posinf=1e5, neginf=-1e5, out=param.grad
+        #                 )
+        #         G_phase.opt.step()
+
+        #         # Update weights of swin transformer
+        #         for param in swin.parameters():
+        #             if param.grad is not None:
+        #                 misc.nan_to_num(
+        #                     param.grad, nan=0, posinf=1e5, neginf=-1e5, out=param.grad
+        #                 )
+        #         # print('Swin param: ', next(swin.parameters())[0][0][0])
+        #         swin_opt.step()
+
+
         for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):
             ### Weird Behavior: Skipping ###
             # if batch_idx % phase.interval != 0:
@@ -476,11 +539,11 @@ def training_loop(
                           misc.nan_to_num(
                               param.grad, nan=0, posinf=1e5, neginf=-1e5, out=param.grad
                           )
-                  # print('Swin param: ', next(swin.parameters())[0][0][0])
                   swin_opt.step()
 
             if phase.end_event is not None:
                 phase.end_event.record(torch.cuda.current_stream(device))
+
 
         # Update G_ema.
         print('Update G_ema')
@@ -510,16 +573,6 @@ def training_loop(
                 (augment_pipe.p + adjust).max(misc.constant(0, device=device))
             )
 
-
-        # Perform maintenance tasks once per tick.
-        print('maintenance')
-        done = cur_nimg >= total_kimg * 1
-        # if (
-        #     (not done)
-        #     and (cur_tick != 0)
-        #     and (cur_nimg < tick_start_nimg + kimg_per_tick * 1000)
-        # ):
-        #     continue
 
         # Print status line, accumulating the same information in stats_collector.
         tick_end_time = time.time()
@@ -560,6 +613,7 @@ def training_loop(
         #     print(" ".join(fields))
 
         # Check for abort.
+        done = (cur_nimg >= total_kimg * 1000)
         if (not done) and (abort_fn is not None) and abort_fn():
             done = True
             if rank == 0:
@@ -586,7 +640,7 @@ def training_loop(
 
           deg_img = phase_deg_img[0].cpu()
           count = cur_nimg - batch_size
-          save_img = torch.cat([real_img, deg_img, gen_img]).numpy()
+          save_img = torch.cat([real_img.detach(), deg_img, gen_img]).numpy()
           save_image_grid(save_img, os.path.join(run_dir, f'result_{batch_idx}.png'), drange=[-1,1], grid_size=(batch_size, 3))
 
           G = G.to('cuda')

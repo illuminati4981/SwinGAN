@@ -91,6 +91,7 @@ class LPIPS:
 
     def __init__(self, net: str) -> None:
         self.model = lpips.LPIPS(net=net)
+        self.model.requires_grad_(True)
         frozen_module(self.model)
     
     @torch.no_grad()

@@ -35,21 +35,21 @@ def extract_feats(x, swin):
     return x_feats
 
 
-def id_loss(y_hat, y, swin, batch_size=16):
-    y_hat = y_hat.to('cpu')
-    y = y.to('cpu')
+def id_loss(gen_img, real_img, swin, batch_size=16):
+    gen_img = gen_img.to('cpu')
+    real_img = real_img.to('cpu')
     swin = swin.to('cpu')
-    y_feats = extract_feats(y, swin)  # Otherwise use the feature from there
-    y_hat_feats = extract_feats(y_hat, swin)
-    y_feats = y_feats.detach()
+    real_img_feats = extract_feats(real_img, swin)  # Otherwise use the feature from there
+    gen_img_feats = extract_feats(gen_img, swin)
+    real_img_feats = real_img_feats.detach()
     loss = 0
 
     for i in range(batch_size):
-        diff_target = y_hat_feats[i].dot(y_feats[i])
+        diff_target = gen_img_feats[i].dot(real_img_feats[i])
         loss += 1 - diff_target
 
-    y_hat.to('cuda')
-    y.to('cuda')
+    gen_img.to('cuda')
+    real_img.to('cuda')
     swin.to('cuda')
 
     return loss / batch_size
@@ -132,6 +132,31 @@ class StyleGAN2Loss(Loss):
         do_Dr1 = (phase in ["Dreg", "Dboth"]) and (self.r1_gamma != 0)
         loss_value = 0
 
+        # with torch.autograd.profiler.record_function("Gmain_forward"):
+        #     gen_img, _gen_ws = self.run_G(
+        #         deg_img,
+        #         gen_z,
+        #         gen_c,
+        #         sync=(sync and not do_Gpl),  # deg_img manually added
+        #     )
+
+        #     real_img = real_img.requires_grad_(True)
+
+        #     from metrics.restoration_metrics import LPIPS
+        #     lpips_model = LPIPS(net='alex').to('cpu')
+        #     lpips_value = lpips_model(real_img, gen_img, False, 16)
+        #     lpips_value = lpips_value.to('cuda')
+            
+        #     real_img = real_img.to('cuda')
+        #     gen_img = gen_img.to('cuda')
+        #     print('lpips_value ', lpips_value)
+        #     print('torch.nn.functional.l1_loss(input=real_img, target=gen_img) ', torch.nn.functional.l1_loss(input=real_img, target=gen_img))
+        #     loss_Gmain = torch.nn.functional.l1_loss(input=real_img, target=gen_img) * 0.7 + lpips_value 
+
+        # with torch.autograd.profiler.record_function("Gmain_backward"):
+        #     loss_Gmain.mul(gain).backward()
+        # loss_value = loss_Gmain.mul(gain)
+
         # Gmain: Maximize logits for generated images.
         if do_Gmain:
             with torch.autograd.profiler.record_function("Gmain_forward"):
@@ -146,13 +171,15 @@ class StyleGAN2Loss(Loss):
                 training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Gmain = torch.nn.functional.softplus(
                     -gen_logits # -log(sigmoid(gen_logits))
-                ) + torch.nn.functional.l1_loss(input=real_img, target=gen_img) 
-                + id_loss(gen_img, real_img, self.swin)
+                ).mean() + torch.nn.functional.l1_loss(input=real_img, target=gen_img) 
+                
+                print('ID Loss: ', id_loss(gen_img, real_img, self.swin))
 
                 training_stats.report("Loss/G/loss", loss_Gmain)
             with torch.autograd.profiler.record_function("Gmain_backward"):
-                loss_Gmain.mean().mul(gain).backward()
-            loss_value = loss_Gmain.mean().mul(gain)
+                loss_Gmain.mul(gain).backward()
+            loss_value = loss_Gmain.mul(gain)
+
 
         # Gpl: Apply path length regularization.
         if do_Gpl:
@@ -186,7 +213,7 @@ class StyleGAN2Loss(Loss):
                  training_stats.report("Loss/G/reg", loss_Gpl)
             with torch.autograd.profiler.record_function("Gpl_backward"):
                  (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
-            # loss_value = (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain)
+
 
         # Dmain: Minimize logits for generated images.
         loss_Dgen = 0
@@ -203,11 +230,9 @@ class StyleGAN2Loss(Loss):
                 loss_Dgen = torch.nn.functional.softplus(
                     gen_logits  # -log(1 - sigmoid(gen_logits))  
                 ) 
-                # + torch.nn.functional.l1_loss(input=real_img, target=gen_img) ### L1 Loss
-                # + id_loss(gen_img, real_img, swin)
             with torch.autograd.profiler.record_function("Dgen_backward"):
                 loss_Dgen.mean().mul(gain).backward()
-            # loss_value = loss_Dgen.mean().mul(gain)
+
 
         # Dmain: Maximize logits for real images.
         # Dr1: Apply R1 regularization.
@@ -244,11 +269,9 @@ class StyleGAN2Loss(Loss):
                     loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
                     training_stats.report("Loss/r1_penalty", r1_penalty)
                     training_stats.report("Loss/D/reg", loss_Dr1)
-
             with torch.autograd.profiler.record_function(name + "_backward"):
                 (real_logits * 0 + loss_Dreal + loss_Dr1).mean().mul(gain).backward()
 
-            # loss_value = (real_logits * 0 + loss_Dreal + loss_Dr1).mean().mul(gain)
         
         return loss_value
 
