@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -93,8 +93,8 @@ class StyleGAN2Loss(Loss):
             swin_normalization = transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
             swin_input = swin_normalization(x)  
 
-            x, stage1_output, stage2_output, stage3_output, stage4_output = self.swin(swin_input)
-            noises = [stage1_output, stage2_output, stage3_output, stage4_output]
+            x, size128_output, size64_output, size32_output, size16_output, size8_output, size4_output = self.swin(swin_input)
+            noises = [size128_output, size64_output, size32_output, size16_output, size8_output, size4_output]
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, c)
 

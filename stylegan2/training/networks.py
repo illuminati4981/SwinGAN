@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -681,14 +681,18 @@ class SynthesisNetwork(torch.nn.Module):
         for res, cur_ws in zip(self.block_resolutions, block_ws):
             block = getattr(self, f"b{res}")
             ### Input parameters
-            if res == 8:
-              noise = unet_noises[3]
+            if res == 4:
+                noise = unet_noises[5]
+            elif res == 8:
+              noise = unet_noises[4]
             elif res == 16:
-              noise = unet_noises[2]
+              noise = unet_noises[3]
             elif res == 32:
-              noise = unet_noises[1]
+              noise = unet_noises[2]
             elif res == 64:
-              noise = unet_noises[0]
+              noise = unet_noises[1]
+            elif res == 128:
+                noise = unet_noises[0]
             else:
               noise = None
             x, img = block(x, img, cur_ws, noise, **block_kwargs)
