@@ -153,7 +153,7 @@ class WindowAttention(nn.Module):
 
         # cosine attention
         attn = (F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1))
-        logit_scale = torch.clamp(self.logit_scale, max=torch.log(torch.tensor(1. / 0.01))).exp()
+        logit_scale = torch.clamp(self.logit_scale, max=torch.log(torch.tensor(1. / 0.01)).to('cuda')).exp()
         attn = attn * logit_scale
 
         relative_position_bias_table = self.cpb_mlp(self.relative_coords_table).view(-1, self.num_heads)
@@ -429,9 +429,10 @@ class BasicLayer(nn.Module):
                 x = checkpoint.checkpoint(blk, x)
             else:
                 x = blk(x)
+        hidden_x = x
         if self.downsample is not None:
             x = self.downsample(x)
-        return x
+        return x, hidden_x
 
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"
@@ -527,7 +528,7 @@ class PatchUnEmbed(nn.Module):
 
     def forward(self, x, x_size):
         B, HW, C = x.shape
-        x = x.transpose(1, 2).view(B, self.embed_dim, x_size[0], x_size[1])  # B Ph*Pw C
+        x = x.transpose(1, 2).view(B, x_size[2], x_size[0], x_size[1])  # B Ph*Pw C
         return x
 
     def flops(self):
@@ -648,10 +649,13 @@ class SwinTransformerV2(nn.Module):
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
-
+  
         for layer in self.layers:
-            x = layer(x)
-            intermediate_result.append(self.patch_unembed(x))
+            x, hidden_x = layer(x)
+            print(x.shape)
+            hidden_x_size = (int(np.sqrt(hidden_x.shape[1])), int(np.sqrt(hidden_x.shape[1])), hidden_x.shape[2])
+            print(hidden_x_size)
+            intermediate_result.append(self.patch_unembed(hidden_x, hidden_x_size))
 
         x = self.norm(x)  # B L C
         x = self.avgpool(x.transpose(1, 2))  # B C 1

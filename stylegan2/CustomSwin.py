@@ -7,8 +7,7 @@ from Swin import SwinTransformerV2
 class CustomSwin(nn.Module):
     def __init__(self):
         super().__init__()
-        self.swin = SwinTransformerV2(img_size=256, window_size=8)
-        self.swin.train()
+        self.swin = SwinTransformerV2(img_size=256, window_size=8)   
         self.head = nn.Linear(in_features=768, out_features=512, bias=True)
         self.pool_128 = nn.AvgPool3d((3,2,2), stride=2)
         self.pool_64 = nn.AvgPool3d((96,1,1), stride=1)
