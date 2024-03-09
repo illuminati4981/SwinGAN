@@ -6,3 +6,5 @@ in/
 .ssh/
 .gdrive/
 .gdfuse/
+desktop.ini
+del_ini.bat

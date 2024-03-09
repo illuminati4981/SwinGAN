@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -31,7 +31,7 @@ def extract_feats(x, swin):
 
     face_pool = torch.nn.AdaptiveAvgPool2d((224, 224))
     x = face_pool(x)
-    x_feats, _, _, _, _= swin(x)
+    x_feats, _, _, _, _, _, _= swin(x)
     return x_feats
 
 
@@ -90,10 +90,10 @@ class StyleGAN2Loss(Loss):
     def run_G(self, x, z, c, sync):
         with misc.ddp_sync(self.swin, sync):
             ### Normalization for swin transformer
-            swin_normalization = transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
-            swin_input = swin_normalization(x)  
+            # swin_normalization = transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
+            # swin_input = swin_normalization(x)  
 
-            x, size128_output, size64_output, size32_output, size16_output, size8_output, size4_output = self.swin(swin_input)
+            x, size128_output, size64_output, size32_output, size16_output, size8_output, size4_output = self.swin(x)
             noises = [size128_output, size64_output, size32_output, size16_output, size8_output, size4_output]
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(x, c)
@@ -158,7 +158,7 @@ class StyleGAN2Loss(Loss):
         # loss_value = loss_Gmain.mul(gain)
 
         # Gmain: Maximize logits for generated images.
-        if do_Gmain:
+        if do_Gmain or do_Gpl:
             with torch.autograd.profiler.record_function("Gmain_forward"):
                 gen_img, _gen_ws = self.run_G(
                     deg_img,
@@ -167,15 +167,16 @@ class StyleGAN2Loss(Loss):
                     sync=(sync and not do_Gpl),  # deg_img manually added
                 )  # May get synced by Gpl.
                 gen_logits = self.run_D(gen_img, gen_c, sync=False)
-                training_stats.report("Loss/scores/fake", gen_logits)
-                training_stats.report("Loss/signs/fake", gen_logits.sign())
+                # training_stats.report("Loss/scores/fake", gen_logits)
+                # training_stats.report("Loss/signs/fake", gen_logits.sign())
+                mse_loss = torch.nn.MSELoss()
                 loss_Gmain = torch.nn.functional.softplus(
                     -gen_logits # -log(sigmoid(gen_logits))
-                ).mean() + torch.nn.functional.l1_loss(input=real_img, target=gen_img) 
+                ).mean() + torch.nn.functional.l1_loss(input=real_img, target=gen_img) * 0.2
                 
-                print('ID Loss: ', id_loss(gen_img, real_img, self.swin))
+                # print('ID Loss: ', id_loss(gen_img, real_img, self.swin))
+                # training_stats.report("Loss/G/loss", loss_Gmain)
 
-                training_stats.report("Loss/G/loss", loss_Gmain)
             with torch.autograd.profiler.record_function("Gmain_backward"):
                 loss_Gmain.mul(gain).backward()
             loss_value = loss_Gmain.mul(gain)
@@ -208,9 +209,9 @@ class StyleGAN2Loss(Loss):
                  pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
                  self.pl_mean.copy_(pl_mean.detach())
                  pl_penalty = (pl_lengths - pl_mean).square()
-                 training_stats.report("Loss/pl_penalty", pl_penalty)
+                #  training_stats.report("Loss/pl_penalty", pl_penalty)
                  loss_Gpl = pl_penalty * self.pl_weight
-                 training_stats.report("Loss/G/reg", loss_Gpl)
+                #  training_stats.report("Loss/G/reg", loss_Gpl)
             with torch.autograd.profiler.record_function("Gpl_backward"):
                  (gen_img[:, 0, 0, 0] * 0 + loss_Gpl).mean().mul(gain).backward()
 
@@ -225,8 +226,8 @@ class StyleGAN2Loss(Loss):
                 gen_logits = self.run_D(
                     gen_img, gen_c, sync=False
                 )  # Gets synced by loss_Dreal.
-                training_stats.report("Loss/scores/fake", gen_logits)
-                training_stats.report("Loss/signs/fake", gen_logits.sign())
+                # training_stats.report("Loss/scores/fake", gen_logits)
+                # training_stats.report("Loss/signs/fake", gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(
                     gen_logits  # -log(1 - sigmoid(gen_logits))  
                 ) 
@@ -244,15 +245,15 @@ class StyleGAN2Loss(Loss):
                 real_img_tmp = deg_img.detach().requires_grad_(do_Dr1)
 
                 real_logits = self.run_D(real_img_tmp, real_c, sync=sync)
-                training_stats.report("Loss/scores/real", real_logits)
-                training_stats.report("Loss/signs/real", real_logits.sign())
+                # training_stats.report("Loss/scores/real", real_logits)
+                # training_stats.report("Loss/signs/real", real_logits.sign())
 
                 loss_Dreal = 0
                 if do_Dmain:
                     loss_Dreal = torch.nn.functional.softplus(
                         -real_logits
                     )  # -log(sigmoid(real_logits))
-                    training_stats.report("Loss/D/loss", loss_Dgen + loss_Dreal)
+                    # training_stats.report("Loss/D/loss", loss_Dgen + loss_Dreal)
 
                 loss_Dr1 = 0
                 if do_Dr1:
@@ -267,8 +268,8 @@ class StyleGAN2Loss(Loss):
                         )[0]
                     r1_penalty = r1_grads.square().sum([1, 2, 3])
                     loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
-                    training_stats.report("Loss/r1_penalty", r1_penalty)
-                    training_stats.report("Loss/D/reg", loss_Dr1)
+                    # training_stats.report("Loss/r1_penalty", r1_penalty)
+                    # training_stats.report("Loss/D/reg", loss_Dr1)
             with torch.autograd.profiler.record_function(name + "_backward"):
                 (real_logits * 0 + loss_Dreal + loss_Dr1).mean().mul(gain).backward()
 
