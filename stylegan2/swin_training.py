@@ -98,10 +98,10 @@ print("Number of batches in the validation loader:", len(val_loader))
 
 # Iterate through the data loaders
 
-learning_rate = 0.001
+learning_rate = 0.01
 betas = (0.9, 0.999)
 epsilon = 1e-8
-epochs = 10000
+epochs = 100
 
 metrics = defaultdict(list)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -128,17 +128,18 @@ best_val_loss = float('inf')
 print("Start training...")
 for epoch in range(epochs):
     running_loss = 0.0
-    
+    epoch_pbar = tqdm(total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}")
     # Training loop
-    for bx, original_image in tqdm(enumerate(train_loader)):
+    for bx, original_image in enumerate(train_loader):
         normalised_original_image = original_image / 127.5 - 1
-        normalised_degraded_image = transform(original_image).permute(0,3,1,2)/127.5-1
+        normalised_degraded_image = transform(original_image)['hint'].permute(0,3,1,2)/127.5-1
         restored_image = model(normalised_degraded_image.to(device))
         loss = criterion(normalised_original_image.to(device), restored_image)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
+        epoch_pbar.update(1)
     
     epoch_loss = running_loss / train_dataset_size
     metrics['train_loss'].append(epoch_loss)
@@ -150,11 +151,11 @@ for epoch in range(epochs):
         saved_snapshot = False
         for bx, original_image in val_loader:
             normalised_original_image = original_image / 127.5 - 1
-            normalised_degraded_image = transform(original_image).permute(0,3,1,2)/127.5-1
+            normalised_degraded_image = transform(original_image)['hint'].permute(0,3,1,2)/127.5-1
             restored_image = model(normalised_degraded_image.to(device))
             loss = criterion(normalised_original_image.to(device), restored_image)
             val_loss += loss.item()
-            if epoch%50==0 and not saved_snapshot:
+            if epoch%5==0 and not saved_snapshot:
                 # Convert torch tensors to numpy arrays
                 original_images = (normalised_original_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)*127.5
                 degraded_images = (normalised_degraded_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)*127.5
@@ -199,7 +200,7 @@ for epoch in range(epochs):
         torch.save(model.decoder.state_dict(), decoder_checkpoint_path) # Save the model
     
     print('[EPOCH] {}/{}\n[TRAIN LOSS] {}\n[VAL LOSS] {}'.format(epoch + 1, epochs, epoch_loss, epoch_val_loss))
-    
+    epoch_pbar.close()
 
 # Assuming you have a CSV file with epoch, train loss, and val loss columns
 csv_file = swin_training_dir+'losses.csv'
