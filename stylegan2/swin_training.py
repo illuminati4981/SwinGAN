@@ -194,7 +194,7 @@ for epoch in range(epochs):
     
 
 # Assuming you have a CSV file with epoch, train loss, and val loss columns
-csv_file = 'losses.csv'
+csv_file = swin_training_dir+'losses.csv'
 
 epochs = []
 train_loss = []
