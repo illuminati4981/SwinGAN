@@ -18,44 +18,32 @@ from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 import csv
+from torch.utils.data.sampler import SubsetRandomSampler
 
 
 class FFHQDataset(Dataset):
-    def __init__(self, zip_file_path, transform=None):
-        self.zip_file_path = zip_file_path
+    def __init__(self, extract_dir, transform=None):
+        self.extract_dir = extract_dir
         self.transform = transform
 
-        self.zip_file = zipfile.ZipFile(zip_file_path, 'r')
-
-        # Get a list of image file names
-        image_folder = "images256x256"
-        self.image_files = sorted([
-            file_info.filename
-            for file_info in self.zip_file.infolist()
-            if file_info.filename.startswith(image_folder) and file_info.filename.endswith(".png")
-        ])
+        self.image_files = [
+            file_name
+            for file_name in os.listdir(extract_dir)
+            if file_name.endswith(".png")
+        ]
 
     def __len__(self):
         return len(self.image_files)
 
     def __getitem__(self, idx):
-        image_path = self.image_files[idx]
+        image_path = os.path.join(self.extract_dir, self.image_files[idx])
         image = self.load_image(image_path)
 
-        if self.transform:
-            normalised_degraded = self.transform(image)['hint'].permute(0, 3, 1, 2)/127.5-1
-
-        normalised_image = image/127.5-1
-        return normalised_image,normalised_degraded
-    
-    def load_image(self, image_path):
-        with self.zip_file.open(image_path) as file:
-            img_data = file.read()
-
-        stream = io.BytesIO(img_data)
-        image = Image.open(stream).convert("RGB")
-        image = ToTensor()(image)
         return image
+
+    def load_image(self, image_path):
+        image = Image.open(image_path).convert("RGB")
+        return ToTensor()(image)
 
 def plot_loss(epochs, train_loss, val_loss):
     plt.plot(epochs, train_loss, 'b', label='Train Loss')
@@ -67,29 +55,44 @@ def plot_loss(epochs, train_loss, val_loss):
     plt.show()
 
 # Specify the path to the zip file
-zip_file_path = "/content/drive/MyDrive/dataset/ffhq/ffhq.zip"
+zip_file_path = "/content/drive/MyDrive/dataset/ffhq/images256x256"
 
 # Define the transform to be applied to the images (if needed)
 config = OmegaConf.load("./degradation/configs/general_deg_realesrgan_train.yaml")
 transform = instantiate_from_config(config.batch_transform)
-
+print("Creating dataset...")
 # Create an instance of the dataset
-dataset = FFHQDataset(zip_file_path, transform=transform)
+dataset = FFHQDataset(zip_file_path)
+print("Created datset variable")
 
-# Split the dataset into training and validation sets
-train_dataset, val_dataset = train_test_split(dataset, test_size=0.2, random_state=42)
-
-# Set batch size for the data loaders
+validation_split = .2
+shuffle_dataset = True
+random_seed= 42
 batch_size = 32
-train_dataset_size = len(train_dataset)
-val_dataset_size = len(val_dataset)
-# Create data loaders for training and validation sets
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+dataset_size = len(dataset)
+indices = list(range(dataset_size))
+split = int(np.floor(validation_split * dataset_size))
+if shuffle_dataset :
+    np.random.seed(random_seed)
+    np.random.shuffle(indices)
+train_indices, val_indices = indices[split:], indices[:split]
+train_dataset_size = len(train_indices)
+val_dataset_size = len(val_indices)
+# Creating PT data samplers and loaders:
+train_sampler = SubsetRandomSampler(train_indices)
+valid_sampler = SubsetRandomSampler(val_indices)
+print("Creating dataloder")
+train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, 
+                                           sampler=train_sampler)
+val_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+                                                sampler=valid_sampler)
+print("Finished creating dataloder")
+
 
 # Access the data loaders
-print("Training set size:", len(train_dataset))
-print("Validation set size:", len(val_dataset))
+print("Training set size:", train_dataset_size)
+print("Validation set size:", val_dataset_size)
 print("Number of batches in the training loader:", len(train_loader))
 print("Number of batches in the validation loader:", len(val_loader))
 
@@ -122,11 +125,14 @@ if not os.path.exists(snapshot_dir):
 model.train()
 start = time.time()
 best_val_loss = float('inf') 
+print("Start training...")
 for epoch in range(epochs):
     running_loss = 0.0
     
     # Training loop
-    for bx, (normalised_original_image, normalised_degraded_image) in tqdm(enumerate(train_loader)):
+    for bx, original_image in tqdm(enumerate(train_loader)):
+        normalised_original_image = original_image / 127.5 - 1
+        normalised_degraded_image = transform(original_image).permute(0,3,1,2)/127.5-1
         restored_image = model(normalised_degraded_image.to(device))
         loss = criterion(normalised_original_image.to(device), restored_image)
         optimizer.zero_grad()
@@ -142,7 +148,9 @@ for epoch in range(epochs):
     val_loss = 0.0
     with torch.no_grad():  # Disable gradient calculation during validation
         saved_snapshot = False
-        for bx, (normalised_original_image, normalised_degraded_image) in val_loader:
+        for bx, original_image in val_loader:
+            normalised_original_image = original_image / 127.5 - 1
+            normalised_degraded_image = transform(original_image).permute(0,3,1,2)/127.5-1
             restored_image = model(normalised_degraded_image.to(device))
             loss = criterion(normalised_original_image.to(device), restored_image)
             val_loss += loss.item()
