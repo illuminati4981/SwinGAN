@@ -1,0 +1,10 @@
+__pycache__/
+.cache/
+training-runs
+in/
+.ipynb_checkpoints/
+.ssh/
+.gdrive/
+.gdfuse/
+desktop.ini
+del_ini.bat

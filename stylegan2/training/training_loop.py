@@ -138,8 +138,8 @@ def training_loop(
 ):
     # Initialize.
     image_snapshot_ticks=10
-    network_snapshot_ticks=50
-    total_kimg = 10000
+    network_snapshot_ticks=1600
+    total_kimg = 1600
     start_time = time.time()
     device = torch.device("cuda", rank)
     np.random.seed(random_seed * num_gpus + rank)
@@ -484,12 +484,7 @@ def training_loop(
         #         swin_opt.step()
 
 
-        for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):
-            ### Weird Behavior: Skipping ###
-            # if batch_idx % phase.interval != 0:
-            #     print('skipped iteration')
-            #     continue
-    
+        for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):    
             # Initialize gradient accumulation.
             if phase.start_event is not None:
                 phase.start_event.record(torch.cuda.current_stream(device))
@@ -509,7 +504,7 @@ def training_loop(
                 loss_value = loss.accumulate_gradients(
                     phase=phase.name,
                     real_img=real_img,
-                    deg_img = real_img,
+                    deg_img=deg_img,
                     real_c=real_c,
                     gen_z=gen_z,
                     gen_c=gen_c,
@@ -626,10 +621,14 @@ def training_loop(
         if (rank == 0) and (image_snapshot_ticks is not None) and (done or cur_tick % image_snapshot_ticks == 0):
           real_img = phase_real_img[0].cpu()
           deg_img = phase_deg_img[0]
-          swin_normalization = transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
-          swin_input = swin_normalization(deg_img)    
-          gen_img, stage1_output, stage2_output, stage3_output, stage4_output = swin(swin_input)
-          noises = [stage1_output, stage2_output, stage3_output, stage4_output]
+          # swin_normalization = transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
+          # swin_input = swin_normalization(deg_img)    
+          swin_input = deg_img
+          gen_img, size128_output, size64_output, size32_output, size16_output, size8_output, size4_output = swin(swin_input)
+          noises = [size128_output, size64_output, size32_output, size16_output, size8_output, size4_output]
+
+          print('swin_input', swin_input[0: 3][0])
+          print('swin_input', gen_img[0: 3])
 
           G = G.to('cpu')
           G_ema = G_ema.to('cuda')
