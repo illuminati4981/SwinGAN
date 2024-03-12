@@ -101,7 +101,7 @@ print("Number of batches in the validation loader:", len(val_loader))
 learning_rate = 0.01
 betas = (0.9, 0.999)
 epsilon = 1e-8
-epochs = 100
+epochs = int(1e5)
 
 metrics = defaultdict(list)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -109,8 +109,10 @@ model = SwinAutoEncoder()
 total_params = sum(p.numel() for p in model.parameters())
 print(f"Total number of parameters: {total_params}")
 model.to(device)
-criterion = nn.MSELoss()
+criterion = nn.L1Loss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=betas, eps=epsilon)
+
+max_checkpoints = 5
 
 swin_training_dir = 'swin_training/'
 
@@ -131,7 +133,7 @@ for epoch in range(epochs):
     epoch_pbar = tqdm(total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}")
     # Training loop
     for bx, original_image in enumerate(train_loader):
-        normalised_original_image = original_image / 127.5 - 1
+        normalised_original_image = original_image*2 - 1
         normalised_degraded_image = transform(original_image)['hint'].permute(0,3,1,2)/127.5-1
         restored_image = model(normalised_degraded_image.to(device))
         loss = criterion(normalised_original_image.to(device), restored_image)
@@ -149,24 +151,24 @@ for epoch in range(epochs):
     val_loss = 0.0
     with torch.no_grad():  # Disable gradient calculation during validation
         saved_snapshot = False
-        for bx, original_image in val_loader:
-            normalised_original_image = original_image / 127.5 - 1
+        for bx, original_image in enumerate(val_loader):
+            normalised_original_image = original_image*2 - 1
             normalised_degraded_image = transform(original_image)['hint'].permute(0,3,1,2)/127.5-1
             restored_image = model(normalised_degraded_image.to(device))
             loss = criterion(normalised_original_image.to(device), restored_image)
             val_loss += loss.item()
-            if epoch%5==0 and not saved_snapshot:
+            if (epoch%100==0 or epoch == epochs-1) and not saved_snapshot:
                 # Convert torch tensors to numpy arrays
-                original_images = (normalised_original_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)*127.5
-                degraded_images = (normalised_degraded_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)*127.5
-                restored_images = (restored_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)*127.5
+                original_images = (normalised_original_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)/2
+                degraded_images = (normalised_degraded_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)/2
+                restored_images = np.clip((restored_image.permute(0, 2, 3, 1).detach().cpu().numpy()+1)/2, 0, 1)
 
                 # Configure the plot grid
                 num_images = original_images.shape[0]  # Number of images in the batch
                 grid_size = int(np.ceil(np.sqrt(num_images)))  # Size of the grid (square root of num_images, rounded up)
 
                 # Create a figure and axis for the plot
-                fig, axs = plt.subplots(grid_size, grid_size)
+                fig, axs = plt.subplots(grid_size, grid_size, squeeze=False)
 
                 # Iterate over the images in the batch and plot them in the grid
                 for i in range(num_images):
@@ -178,6 +180,7 @@ for epoch in range(epochs):
                 snapshot_name = f'iter_{epoch}.png'
                 # Save the plot as an image
                 plt.savefig(snapshot_dir+'/'+snapshot_name)
+                plt.close()
                 saved_snapshot = True
 
     epoch_val_loss = val_loss / val_dataset_size
@@ -192,6 +195,20 @@ for epoch in range(epochs):
     # Check if the current model has the lowest validation loss
     if epoch_val_loss < best_val_loss:
         best_val_loss = epoch_val_loss
+
+        checkpoints = [f for f in os.listdir(checkpoint_dir)]
+
+        # Check if the number of existing checkpoints exceeds the limit
+        if len(checkpoints) >= max_checkpoints:
+            # Sort the checkpoints by creation time (oldest first)
+            checkpoints.sort(key=lambda x: os.path.getctime(x))
+            
+            # Remove the oldest checkpoints until the number is within the limit
+            remove_count = len(checkpoints) - max_checkpoints + 1
+            for i in range(remove_count):
+                checkpoint_path = os.path.join(checkpoint_dir, checkpoints[i])
+                os.rmdir(checkpoint_path)
+
         checkpoint_by_epoch_dir = f'checkpoint_val_loss_{epoch_val_loss:.4f}_iter_{epoch}'
         os.makedirs(checkpoint_dir+'/'+checkpoint_by_epoch_dir, exist_ok=True)
         encoder_checkpoint_path = os.path.join(checkpoint_dir+'/'+checkpoint_by_epoch_dir, 'encoder.pt')
