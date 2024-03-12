@@ -8,7 +8,7 @@ import numpy as np
 
 import sys
 import os
-from CustomSwin import CustomSwin
+from Swin import SwinV2Encoder, SwinV2Decoder
 
 
 class ConvBlock(nn.Module):
@@ -86,10 +86,11 @@ class Decoder(nn.Module):
 class SwinAutoEncoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.encoder = CustomSwin()
-        self.decoder = Decoder()
+        self.encoder = SwinV2Encoder(img_size=256, window_size=8)
+        self.decoder = SwinV2Decoder(img_size=256, window_size=8, num_classes=3)
 
     def forward(self, x):
-        x, size128_output, size64_output, size32_output, size16_output, size8_output, size4_output = self.encoder(x)
-        x = self.decoder(x, (size128_output, size64_output, size32_output, size16_output, size8_output, size4_output))
+        x, hidden_states = self.encoder(x)
+        x = self.decoder(x, hidden_states)
+        
         return x
