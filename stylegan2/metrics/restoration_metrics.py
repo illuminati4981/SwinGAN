@@ -1,8 +1,10 @@
 import torch
 import lpips
 import numpy as np
+from typing import Union, Tuple
 from torch import nn
 from scipy import linalg
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure, StructuralSimilarityIndexMeasure
 
 # For PSNR
 def rgb2ycbcr_pt(img, y_only=False):
@@ -121,4 +123,12 @@ class LPIPS:
         self.model.to(device)
         return self
 
+
+# SSIM
+def ssim(img1 : torch.Tensor, img2 : torch.Tensor, data_range : Union[float, Tuple[float, float], None] = None):
+    return StructuralSimilarityIndexMeasure(data_range=data_range)(img1, img2)
+
+# MS-SSIM
+def msssim(img1 : torch.Tensor, img2 : torch.Tensor, data_range : Union[float, Tuple[float, float], None] = None):
+    return MultiScaleStructuralSimilarityIndexMeasure(data_range=data_range)(img1, img2)
 
