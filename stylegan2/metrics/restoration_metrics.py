@@ -126,9 +126,9 @@ class LPIPS:
 
 # SSIM
 def ssim(img1 : torch.Tensor, img2 : torch.Tensor, data_range : Union[float, Tuple[float, float], None] = None):
-    return StructuralSimilarityIndexMeasure(data_range=data_range)(img1, img2)
+    return StructuralSimilarityIndexMeasure(data_range=data_range).to('cpu')(img1, img2)
 
 # MS-SSIM
 def msssim(img1 : torch.Tensor, img2 : torch.Tensor, data_range : Union[float, Tuple[float, float], None] = None):
-    return MultiScaleStructuralSimilarityIndexMeasure(data_range=data_range)(img1, img2)
+    return MultiScaleStructuralSimilarityIndexMeasure(data_range=data_range).to('cpu')(img1, img2)
 

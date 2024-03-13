@@ -669,15 +669,15 @@ def training_loop(
 			# lpips.append(lpips_value)
 			# print('lpips: ', lpips) 
 
-			# SSIM
-			ssim_score = ssim(phase_real_img[0], gen_img, data_range=(-1, 1))
-			ssim_scores.append(ssim_score)
-			print(ssim_scores)
+			# # SSIM
+			# ssim_score = ssim(phase_real_img[0], gen_img, data_range=(-1, 1))
+			# ssim_scores.append(ssim_score)
+			# print(ssim_scores)
 
-			# MSSSIM
-			msssim_score = msssim(phase_real_img[0], gen_img, data_range=(-1, 1))
-			mssim_scores.append(msssim_score)
-			print(mssim_scores)
+			# # MSSSIM
+			# msssim_score = msssim(phase_real_img[0], gen_img, data_range=(-1, 1))
+			# mssim_scores.append(msssim_score)
+			# print(mssim_scores)
 
 
 			# ---------------- Evaluation between real and degraded image ---------------- #
