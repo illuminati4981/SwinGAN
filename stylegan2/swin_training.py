@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 from torch.utils.data.sampler import SubsetRandomSampler
+import shutil 
 
 
 class FFHQDataset(Dataset):
@@ -28,7 +29,7 @@ class FFHQDataset(Dataset):
 
         self.image_files = [
             file_name
-            for file_name in os.listdir(extract_dir)
+            for file_name in os.listdir(extract_dir)[:100]
             if file_name.endswith(".png")
         ]
 
@@ -165,21 +166,25 @@ for epoch in range(epochs):
 
                 # Configure the plot grid
                 num_images = original_images.shape[0]  # Number of images in the batch
-                grid_size = int(np.ceil(np.sqrt(num_images)))  # Size of the grid (square root of num_images, rounded up)
+                # Create the stacked image columns using list comprehension and slicing
+                columns = [np.vstack((original_images[i], degraded_images[i], restored_images[i])) for i in range(num_images)]
 
-                # Create a figure and axis for the plot
-                fig, axs = plt.subplots(grid_size, grid_size, squeeze=False)
+                # Concatenate the columns horizontally to create the snapshot image
+                snapshot_image = np.hstack(columns)
 
-                # Iterate over the images in the batch and plot them in the grid
-                for i in range(num_images):
-                    row = i // grid_size
-                    col = i % grid_size
-                    axs[row, col].imshow(np.hstack((original_images[i], degraded_images[i], restored_images[i])))
-                    axs[row, col].axis('off')
+                # Set the desired figure size
+                fig_width = num_images * 3  # Adjust as needed
+                fig_height = 9  # Adjust as needed
 
+                # Create the figure with the desired size
+                fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+                # Display the snapshot image
+                ax.imshow(snapshot_image)
+                ax.axis('off')
                 snapshot_name = f'iter_{epoch}.png'
                 # Save the plot as an image
-                plt.savefig(snapshot_dir+'/'+snapshot_name)
+                plt.savefig(snapshot_dir+'/'+snapshot_name, bbox_inches='tight', pad_inches=0)
                 plt.close()
                 saved_snapshot = True
 
@@ -201,13 +206,13 @@ for epoch in range(epochs):
         # Check if the number of existing checkpoints exceeds the limit
         if len(checkpoints) >= max_checkpoints:
             # Sort the checkpoints by creation time (oldest first)
-            checkpoints.sort(key=lambda x: os.path.getctime(x))
+            checkpoints.sort(key=lambda x: os.path.getctime(checkpoint_dir+'/'+x))
             
             # Remove the oldest checkpoints until the number is within the limit
             remove_count = len(checkpoints) - max_checkpoints + 1
             for i in range(remove_count):
                 checkpoint_path = os.path.join(checkpoint_dir, checkpoints[i])
-                os.rmdir(checkpoint_path)
+                shutil.rmtree(checkpoint_path)
 
         checkpoint_by_epoch_dir = f'checkpoint_val_loss_{epoch_val_loss:.4f}_iter_{epoch}'
         os.makedirs(checkpoint_dir+'/'+checkpoint_by_epoch_dir, exist_ok=True)
