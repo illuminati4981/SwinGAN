@@ -653,6 +653,7 @@ class SwinTransformerV2(nn.Module):
         for layer in self.layers:
             x, hidden_x = layer(x)
             hidden_x_size = (int(np.sqrt(hidden_x.shape[1])), int(np.sqrt(hidden_x.shape[1])), hidden_x.shape[2])
+            hidden_x_size = (int(np.sqrt(hidden_x.shape[1])), int(np.sqrt(hidden_x.shape[1])), hidden_x.shape[2])
             intermediate_result.append(self.patch_unembed(hidden_x, hidden_x_size))
 
         x = self.norm(x)  # B L C

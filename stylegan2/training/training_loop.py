@@ -143,6 +143,7 @@ def training_loop(
     network_snapshot_ticks=500
     total_img = training_set_kwargs.max_size
     total_kimg = 48981
+
     start_time = time.time()
     device = torch.device("cuda", rank)
     np.random.seed(random_seed * num_gpus + rank)
@@ -460,7 +461,7 @@ def training_loop(
                 loss_value = loss.accumulate_gradients(
                     phase=phase.name,
                     real_img=real_img,
-                    deg_img = deg_img,
+                    deg_img=deg_img,
                     real_c=real_c,
                     gen_z=gen_z,
                     gen_c=gen_c,

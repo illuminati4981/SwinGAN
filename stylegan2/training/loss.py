@@ -57,7 +57,6 @@ class Loss:
 #         diff_target = torch.nn.functional.l1_loss(real_img_feats, gen_img_feats)
 #         loss += diff_target
         
-
 #     real_img = real_img.to('cuda')
 #     gen_img = gen_img.to('cuda')
 #     return loss / batch_size
@@ -69,7 +68,6 @@ def matching_loss(gen_feats, real_feats):
       loss += torch.nn.functional.l1_loss(input=gen_feat, target=real_feat)
 
     return loss
-
 
 
 # ----------------------------------------------------------------------------
@@ -184,7 +182,7 @@ class StyleGAN2Loss(Loss):
 
 
         # Gmain: Maximize logits for generated images.
-        if do_Gmain:
+        if do_Gmain or do_Gpl:
             with torch.autograd.profiler.record_function("Gmain_forward"):
                 gen_img, _gen_ws = self.run_G(
                     deg_img,
@@ -192,6 +190,7 @@ class StyleGAN2Loss(Loss):
                     gen_c,
                     sync=(sync and not do_Gpl),  # deg_img manually added
                 )  # May get synced by Gpl.
+
                 gen_logits, gen_feats = self.run_D(gen_img, gen_c, sync=False)
                 _, real_feats = self.run_D(real_img, gen_c, sync=False)
 
@@ -276,6 +275,7 @@ class StyleGAN2Loss(Loss):
                 gen_logits, _= self.run_D(
                     gen_img, gen_c, sync=False
                 )  # Gets synced by loss_Dreal.
+
                 loss_Dgen = torch.nn.functional.softplus(
                     gen_logits  # -log(1 - sigmoid(gen_logits))  
                 ).mean()
@@ -293,7 +293,6 @@ class StyleGAN2Loss(Loss):
             )
             with torch.autograd.profiler.record_function(name + "_forward"):
                 real_img_tmp = real_img.detach().requires_grad_(do_Dr1)
-
                 real_logits, _= self.run_D(real_img_tmp, real_c, sync=sync)
                 loss_Dreal = 0
                 if do_Dmain:
@@ -317,6 +316,7 @@ class StyleGAN2Loss(Loss):
                 #     loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
                 #     training_stats.report("Loss/r1_penalty", r1_penalty)
                 #     training_stats.report("Loss/D/reg", loss_Dr1)
+
             with torch.autograd.profiler.record_function(name + "_backward"):
                 # (real_logits * 0 + loss_Dreal / 10 * 200 + loss_Dr1).backward()
                 # (loss_Dreal).backward()
