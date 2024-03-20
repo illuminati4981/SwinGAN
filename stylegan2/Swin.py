@@ -652,9 +652,8 @@ class SwinTransformerV2(nn.Module):
   
         for layer in self.layers:
             x, hidden_x = layer(x)
-            # print(x.shape)
             hidden_x_size = (int(np.sqrt(hidden_x.shape[1])), int(np.sqrt(hidden_x.shape[1])), hidden_x.shape[2])
-            # print(hidden_x_size)
+            hidden_x_size = (int(np.sqrt(hidden_x.shape[1])), int(np.sqrt(hidden_x.shape[1])), hidden_x.shape[2])
             intermediate_result.append(self.patch_unembed(hidden_x, hidden_x_size))
 
         x = self.norm(x)  # B L C
@@ -664,7 +663,6 @@ class SwinTransformerV2(nn.Module):
 
     def forward(self, x):
         x, stage1_output, stage2_output, stage3_output, stage4_output = self.forward_features(x)
-        # x = self.head(x)
         return x, stage1_output, stage2_output, stage3_output, stage4_output
 
     def flops(self):

@@ -43,7 +43,8 @@ def setup_training_loop_kwargs(
     seed       = None, # Random seed: <int>, default = 0
 
     # Dataset.
-    data       = None, # Training dataset (required): <path>
+    training_data = None, # Training dataset (required): <path>
+    validation_data = None, # Validation dataset (required): <path>
     cond       = None, # Train conditional model based on dataset labels: <bool>, default = False
     subset     = None, # Train with only N images: <int>, default = all
     mirror     = None, # Augment dataset with x-flips: <bool>, default = False
@@ -62,6 +63,7 @@ def setup_training_loop_kwargs(
 
     # Transfer learning.
     resume     = None, # Load previous network: 'noresume' (default), 'ffhq256', 'ffhq512', 'ffhq1024', 'celebahq256', 'lsundog256', <file>, <url>
+    resume_swin = None,
     freezed    = None, # Freeze-D: <int>, default = 0 discriminator layers
 
     # Performance options (not included in desc).
@@ -107,24 +109,34 @@ def setup_training_loop_kwargs(
     args.random_seed = seed
     
     # -----------------------------------
-    # Dataset: data, cond, subset, mirror
+    # Dataset: training_data, validation_data, cond, subset, mirror
     # -----------------------------------
-
-    assert data is not None
-    assert isinstance(data, str)
-    args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data, use_labels=True, max_size=None, xflip=False)
-    # args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
     args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=1, prefetch_factor=2)
+
+    assert training_data is not None
+    assert isinstance(training_data, str)
+    args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=training_data, use_labels=True, max_size=None, xflip=False)
     try:
         training_set = dnnlib.util.construct_class_by_name(**args.training_set_kwargs) # subclass of training.dataset.Dataset
         args.training_set_kwargs.resolution = training_set.resolution # be explicit about resolution
-        # args.training_set_kwargs.use_labels = training_set.has_labels # be explicit about labels
-        
         args.training_set_kwargs.use_labels = False # Set to disable label operations
-        
         args.training_set_kwargs.max_size = len(training_set) # be explicit about dataset size
         desc = training_set.name
         del training_set # conserve memory
+    except IOError as err:
+        raise UserError(f'--data: {err}')
+
+
+    assert validation_data is not None
+    assert isinstance(validation_data, str)
+    args.validation_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=validation_data, use_labels=True, max_size=None, xflip=False)
+    try:
+        validation_set = dnnlib.util.construct_class_by_name(**args.validation_set_kwargs) # subclass of validating.dataset.Dataset
+        args.validation_set_kwargs.resolution = validation_set.resolution # be explicit about resolution
+        args.validation_set_kwargs.use_labels = False # Set to disable label operations
+        args.validation_set_kwargs.max_size = len(validation_set) # be explicit about dataset size
+        desc = validation_set.name
+        del validation_set # conserve memory
     except IOError as err:
         raise UserError(f'--data: {err}')
 
@@ -195,8 +207,8 @@ def setup_training_loop_kwargs(
     args.G_kwargs.synthesis_kwargs.conv_clamp = args.D_kwargs.conv_clamp = 256 # clamp activations to avoid float16 overflow
     args.D_kwargs.epilogue_kwargs.mbstd_group_size = spec.mbstd
 
-    args.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
-    args.D_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
+    args.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8, weight_decay=1e-4)
+    args.D_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8, weight_decay=1e-4)
     args.loss_kwargs = dnnlib.EasyDict(class_name='training.loss.StyleGAN2Loss', r1_gamma=spec.gamma)
 
     args.total_kimg = spec.kimg
@@ -323,6 +335,13 @@ def setup_training_loop_kwargs(
         desc += '-resumecustom'
         args.resume_pkl = resume # custom path or url
 
+    # Resume swin
+    if resume_swin is not None:
+        args.resume_swin = resume_swin
+    else:
+        args.resume_swin = None
+
+
     if resume != 'noresume':
         args.ada_kimg = 100 # make ADA react faster at the beginning
         args.ema_rampup = None # disable EMA rampup
@@ -420,7 +439,8 @@ class CommaSeparatedList(click.ParamType):
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
 
 # Dataset. 
-@click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
+@click.option('--training-data', help='Training data (directory or zip)', metavar='PATH', required=True)
+@click.option('--validation-data', help='Validation data (directory or zip)', metavar='PATH', required=True)
 @click.option('--cond', help='Train conditional model based on dataset labels [default: false]', type=bool, metavar='BOOL')
 @click.option('--subset', help='Train with only N images [default: all]', type=int, metavar='INT')
 @click.option('--mirror', help='Enable dataset x-flips [default: false]', type=bool, metavar='BOOL')
@@ -439,6 +459,7 @@ class CommaSeparatedList(click.ParamType):
 
 # Transfer learning.
 @click.option('--resume', help='Resume training [default: noresume]', metavar='PKL')
+@click.option('--resume-swin', help='Resume swin training [default: noresume]', metavar='PKL')
 @click.option('--freezed', help='Freeze-D [default: 0 layers]', type=int, metavar='INT')
 
 # Performance options.
@@ -549,12 +570,11 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     print()
     print(f'Output directory:   {args.run_dir}')
     print(f'Training data:      {args.training_set_kwargs.path}')
+    print(f'Validation data:      {args.validation_set_kwargs.path}')
     print(f'Training duration:  {args.total_kimg} kimg')
-    print(f'Number of GPUs:     {args.num_gpus}')
-    print(f'Number of images:   {args.training_set_kwargs.max_size}')
+    print(f'Number of Training Images:   {args.training_set_kwargs.max_size}')
+    print(f'Number of Validation Images:   {args.training_set_kwargs.max_size}')
     print(f'Image resolution:   {args.training_set_kwargs.resolution}')
-    print(f'Conditional model:  {args.training_set_kwargs.use_labels}')
-    print(f'Dataset x-flips:    {args.training_set_kwargs.xflip}')
     print()
 
     # Dry run?

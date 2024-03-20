@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -304,7 +304,6 @@ class MappingNetwork(torch.nn.Module):
                 )
 
         # Broadcast.
-        print()
         if self.num_ws is not None:
             with torch.autograd.profiler.record_function("broadcast"):
                 x = x.unsqueeze(1).repeat([1, self.num_ws, 1])
@@ -627,7 +626,6 @@ class SynthesisNetwork(torch.nn.Module):
         super().__init__()
         self.w_dim = w_dim
         self.img_resolution = img_resolution
-        print('')
 
         #########################################
         # Hardcode to change the img_resolution #
@@ -1085,15 +1083,17 @@ class Discriminator(torch.nn.Module):
 
     def forward(self, img, c, **block_kwargs):
         x = None
+        feats = []
         for res in self.block_resolutions:
             block = getattr(self, f"b{res}")
             x, img = block(x, img, **block_kwargs)
+            feats.append(x)
 
         cmap = None
         if self.c_dim > 0:
             cmap = self.mapping(None, c)
         x = self.b4(x, img, cmap)
-        return x
+        return x, feats
 
 
 # ----------------------------------------------------------------------------
