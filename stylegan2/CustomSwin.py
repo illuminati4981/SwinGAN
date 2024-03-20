@@ -29,5 +29,4 @@ class CustomSwin(nn.Module):
         size128_output, size64_output, size32_output, size16_output, size8_output, size4_output = size128_output, size64_output, size32_output, size16_output, size8_output, size4_output
         x = self.head(pooler_output)
         x = self.layerNorm(x)
-        # x = torch.randn((16, 512)).to('cuda')
         return x, size128_output * 0.25, size64_output * 0.25, size32_output * 0.25, size16_output * 0.25, size8_output * 0.25, size4_output * 0.25
