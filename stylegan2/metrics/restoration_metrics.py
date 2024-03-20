@@ -109,7 +109,7 @@ class LPIPS:
         Returns:
             lpips_values (torch.Tensor): The lpips scores of this batch.
         """
-        img1, img2 = img1.to('cpu'), img2.to('cpu')
+        # img1, img2 = img1.to('cpu'), img2.to('cpu')
         returned_value = self.model(img1, img2, normalize=normalize)
         result = 0
         for i in range(batch_size):
