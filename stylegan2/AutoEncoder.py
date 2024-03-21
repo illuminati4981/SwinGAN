@@ -9,6 +9,7 @@ import numpy as np
 import sys
 import os
 from Swin import SwinV2Encoder, SwinV2Decoder
+from transformers import Swinv2Model
 
 
 class ConvBlock(nn.Module):
@@ -86,11 +87,16 @@ class Decoder(nn.Module):
 class SwinAutoEncoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.encoder = SwinV2Encoder(img_size=256, window_size=8)
+        self.encoder = Swinv2Model.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        #self.encoder = SwinV2Encoder(img_size=256, window_size=8)
         self.decoder = SwinV2Decoder(img_size=256, window_size=8, num_classes=3)
 
     def forward(self, x):
-        x, hidden_states = self.encoder(x)
+        outputs = self.encoder(x, return_dict=True, output_hidden_states=True)
+        x = outputs.last_hidden_state
+        hidden_states = outputs.hidden_states[:3]
         x = self.decoder(x, hidden_states)
         
         return x
